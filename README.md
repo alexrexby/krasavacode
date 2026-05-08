@@ -4,23 +4,56 @@
 
 ## Установка и запуск
 
-**Один способ:**
+### Вариант А — у меня есть Node.js
 
 ```bash
 npx krasavacode
 ```
 
-Всё. Pollinations работает без логина и без карты, лимитов хватит на 2–5 учебных MVP.
+Всё. Pollinations работает без логина и без карты. Если у тебя Node старее 20 — наш CLI сам подтянет нужную версию.
 
-При первой команде ставится локальный gateway и Claude Code (один раз, ~30 сек). Потом запуск моментальный.
+### Вариант Б — у меня нет ничего
 
-## Если хочешь больше моделей
+Скачай готовый бинарник из последнего релиза:
+**https://github.com/alexrexby/krasavacode/releases/latest**
+
+| Твоя ОС | Файл |
+|---|---|
+| Windows | `krasavacode.exe` |
+| macOS Apple Silicon (M1/M2/M3/M4) | `krasavacode-mac-arm64` |
+| macOS Intel | `krasavacode-mac-x64` |
+| Linux x64 | `krasavacode-linux-x64` |
+
+После скачивания — открой терминал в папке со скачанным файлом и запусти:
+
+**Windows:**
+```
+krasavacode.exe
+```
+Если выскочит «Windows protected your PC» → жми **More info** → **Run anyway**.
+
+**macOS:**
+```bash
+chmod +x krasavacode-mac-arm64
+xattr -d com.apple.quarantine krasavacode-mac-arm64   # снимает блок Gatekeeper
+./krasavacode-mac-arm64
+```
+
+**Linux:**
+```bash
+chmod +x krasavacode-linux-x64
+./krasavacode-linux-x64
+```
+
+При первом запуске бинарник скачает Node.js и Claude Code в `~/.krasavacode/` (≈100 МБ, один раз). Дальше — мгновенно.
+
+## Если хочется моделей помощнее
 
 ```bash
 npx krasavacode upgrade
 ```
 
-Откроется дашборд в браузере. Там одним кликом подключишь:
+Откроется дашборд OmniRoute в браузере. Подключи одним кликом:
 - **Kiro AI** — Claude Sonnet/Haiku через AWS Builder ID
 - **Qoder** — Kimi K2 / Qwen3-Coder / DeepSeek-R1
 - **Qwen Code** — 4 модели Alibaba
@@ -34,31 +67,19 @@ npx krasavacode upgrade
 npx krasavacode doctor
 ```
 
-Покажет, что сломано. Самые частые проблемы:
-- **Старый Node.js** → обнови до 20+ с https://nodejs.org
-- **Порт занят** → перезапусти терминал
-- **Корпоративный прокси/Россия/Китай** → запусти upgrade и в дашборде включи SOCKS5
+Покажет что сломано. Самые частые проблемы:
+- **Корпоративный прокси / Россия / Китай** → запусти upgrade и в дашборде включи SOCKS5
+- **Порт 3456 занят** → перезапусти терминал
 
 ## Что под капотом
 
 ```
-krasavacode  →  локальный OmniRoute  →  Pollinations / Kiro / Qoder / …
-                (free gateway, MIT)     (free providers без карты)
+krasavacode  →  claude-code-router (порт 3456)  →  Pollinations
+                (Anthropic ↔ OpenAI bridge)        (free, no API key)
 ```
 
-CLI = `@anthropic-ai/claude-code` с подменённым backend. Все обновления Claude Code от Anthropic прилетают автоматом.
-
-## Бинарники без Node.js
-
-Для уроков с непрофильными студентами — скачай готовый бинарник со страницы релиза:
-- `krasavacode.exe` (Windows)
-- `krasavacode-mac-arm64`, `krasavacode-mac-x64` (macOS)
-- `krasavacode-linux-x64` (Linux)
-
-Дабл-клик → откроется терминал с Claude Code. Node.js не нужен.
-
-> Замечание: бинарники тащат portable Node при первом запуске (~30 МБ, один раз). После — работают офлайн.
+CLI = `@anthropic-ai/claude-code` с подменённым `ANTHROPIC_BASE_URL`. Все обновления Claude Code от Anthropic прилетают автоматом.
 
 ## Лицензия
 
-MIT. Pollinations / Kiro AI / Qoder / другие провайдеры имеют свои ToS — читай их условия. На свой риск.
+MIT. Pollinations / Kiro AI / Qoder / другие провайдеры имеют свои ToS — читай их условия.

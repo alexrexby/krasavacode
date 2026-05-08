@@ -6,18 +6,16 @@ import { launchClaude } from '../src/launch.js';
 import { runUpgrade } from '../src/upgrade.js';
 import { runDoctor } from '../src/doctor.js';
 
+// Hardcoded so it works inside Bun --compile (no FS access to package.json)
+const VERSION = '0.2.1';
+
 const cmd = process.argv[2];
 
 async function main() {
   if (cmd === 'doctor') return runDoctor();
   if (cmd === 'upgrade') return runUpgrade();
   if (cmd === '--version' || cmd === '-v') {
-    const { readFile } = await import('node:fs/promises');
-    const { fileURLToPath } = await import('node:url');
-    const { dirname, join } = await import('node:path');
-    const here = dirname(fileURLToPath(import.meta.url));
-    const pkg = JSON.parse(await readFile(join(here, '..', 'package.json'), 'utf8'));
-    console.log(`KRASAVACODE v${pkg.version}`);
+    console.log(`KRASAVACODE v${VERSION}`);
     return;
   }
 
