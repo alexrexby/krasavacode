@@ -7,7 +7,7 @@ import { runUpgrade } from '../src/upgrade.js';
 import { runDoctor } from '../src/doctor.js';
 
 // Hardcoded so it works inside Bun --compile (no FS access to package.json)
-const VERSION = '0.2.1';
+const VERSION = '0.2.2';
 
 const cmd = process.argv[2];
 
