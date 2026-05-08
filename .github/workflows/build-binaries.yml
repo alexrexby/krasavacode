@@ -1,0 +1,54 @@
+name: Build native binaries
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-14
+            target: bun-darwin-arm64
+            outfile: krasavacode-mac-arm64
+          - os: macos-14
+            target: bun-darwin-x64
+            outfile: krasavacode-mac-x64
+          - os: ubuntu-latest
+            target: bun-linux-x64
+            outfile: krasavacode-linux-x64
+          - os: windows-latest
+            target: bun-windows-x64
+            outfile: krasavacode.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - name: Build
+        shell: bash
+        run: |
+          mkdir -p dist
+          bun build --compile --target=${{ matrix.target }} ./bin/krasavacode.js --outfile dist/${{ matrix.outfile }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.outfile }}
+          path: dist/${{ matrix.outfile }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

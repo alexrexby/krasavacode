@@ -1,0 +1,39 @@
+{
+  "name": "krasavacode",
+  "version": "0.2.0",
+  "description": "KRASAVACODE — однокнопочный бесплатный вайбкодинг для учеников. Claude Code на бесплатных провайдерах через локальный gateway. Сам ставит Node при необходимости.",
+  "type": "module",
+  "bin": {
+    "krasavacode": "bin/krasavacode.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "config",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "start": "node bin/krasavacode.js",
+    "build:binaries": "bun build --compile --target=bun-darwin-arm64 ./bin/krasavacode.js --outfile dist/krasavacode-mac-arm64 && bun build --compile --target=bun-darwin-x64 ./bin/krasavacode.js --outfile dist/krasavacode-mac-x64 && bun build --compile --target=bun-windows-x64 ./bin/krasavacode.js --outfile dist/krasavacode.exe && bun build --compile --target=bun-linux-x64 ./bin/krasavacode.js --outfile dist/krasavacode-linux-x64"
+  },
+  "keywords": [
+    "claude-code",
+    "ai",
+    "cli",
+    "vibecoding",
+    "free",
+    "education"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alexrexby/krasavacode.git"
+  },
+  "homepage": "https://github.com/alexrexby/krasavacode#readme",
+  "bugs": {
+    "url": "https://github.com/alexrexby/krasavacode/issues"
+  }
+}

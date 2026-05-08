@@ -1,0 +1,13 @@
+{
+  "name": "Krasava-Free",
+  "description": "Дефолтный preset KRASAVACODE: бесплатные провайдеры без карты, в порядке предпочтения.",
+  "providers": [
+    { "id": "pollinations", "auth": "none", "models": ["openai-large", "claude", "deepseek"] },
+    { "id": "longcat", "auth": "none", "models": ["LongCat-Flash-Lite"] },
+    { "id": "kiro", "auth": "oauth-aws-builder-id", "models": ["claude-sonnet-4.5", "claude-haiku-4.5"] },
+    { "id": "qoder", "auth": "oauth-google", "models": ["kimi-k2-thinking", "qwen3-coder-plus", "deepseek-r1"] },
+    { "id": "qwen-code", "auth": "oauth-alibaba", "models": ["qwen3-coder-plus"] }
+  ],
+  "compression": "stacked",
+  "notes": "v0.1 этот файл — справочный. v0.2 будет инжектить combo через REST API OmniRoute при первом запуске."
+}
