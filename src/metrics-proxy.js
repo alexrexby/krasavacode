@@ -229,9 +229,15 @@ export async function startMetricsProxy(upstreamBaseUrl) {
 
         if (debug) console.error(`[metrics] attempt ${attempt} → ${upRes.statusCode}`);
 
-        // 429 / 400 (incompatible payload) → mark cooldown and retry next provider.
+        // 4xx provider failures → mark cooldown and retry next provider.
+        // We retry on:
+        //   400 — payload incompatible (cache_control etc)
+        //   401 — invalid/expired key
+        //   403 — billing block / disabled
+        //   429 — rate limit / quota
         // Other non-2xx → pass through to client.
-        const isRetryable = upRes.statusCode === 429 || upRes.statusCode === 400;
+        const code = upRes.statusCode;
+        const isRetryable = code === 400 || code === 401 || code === 403 || code === 429;
         if (!isRetryable) {
           if (upRes.statusCode >= 200 && upRes.statusCode < 300) {
             bump(choice.id).catch(() => {});
@@ -248,9 +254,12 @@ export async function startMetricsProxy(upstreamBaseUrl) {
         if (debug) console.error(`[metrics] ${upRes.statusCode} from ${choice.id}: ${upBody.slice(0, 200)}`);
 
         let effectiveReason;
-        if (upRes.statusCode === 400) {
-          // 400 = payload issue (incompatibility, schema mismatch). Skip provider
-          // for an hour so we stop banging head against the wall.
+        if (code === 401 || code === 403) {
+          // Invalid/expired/blocked key — provider is dead until user re-runs
+          // setup. Long cooldown (until tomorrow) so we don't waste retries.
+          effectiveReason = 'per-day';
+        } else if (code === 400) {
+          // Payload incompatibility (Cerebras strict schema, etc) — skip 1 hour.
           effectiveReason = 'per-hour';
         } else if (choice.id === 'pollinations') {
           effectiveReason = 'per-minute';
