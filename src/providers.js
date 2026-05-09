@@ -162,16 +162,15 @@ export const PROVIDERS = {
       name: 'openrouter',
       api_base_url: 'https://openrouter.ai/api/v1/chat/completions',
       api_key: '$OPENROUTER_API_KEY',
-      // OpenRouter постоянно переименовывает модели. Эти три проверены
-      // на май 2026; первая в порядке = defaultModel ниже.
+      // OpenRouter slug-имена меняются каждые 1-2 месяца. Ставим самые
+      // долгоживущие — Llama давно стабильно, Qwen тоже без даты в slug.
       models: [
-        'deepseek/deepseek-chat-v3-0324:free',
         'meta-llama/llama-3.3-70b-instruct:free',
         'qwen/qwen3-235b-a22b:free',
       ],
       transformer: { use: ['openrouter'] },
     }),
-    defaultModel: 'deepseek/deepseek-chat-v3-0324:free',
+    defaultModel: 'meta-llama/llama-3.3-70b-instruct:free',
   },
 
   gemini: {
