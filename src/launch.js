@@ -16,18 +16,21 @@ export async function launchClaude(paths, hub /*, detection */) {
   // Organization · API Usage Billing" header on the welcome screen.
   await mkdir(CLAUDE_CONFIG_DIR, { recursive: true });
 
-  // Drop any pre-existing ANTHROPIC_API_KEY (from the user's shell or a real
-  // Anthropic login) so it doesn't conflict with our auth-token, and so that
-  // Claude Code's welcome screen doesn't show the user's real Anthropic org.
+  // Drop any pre-existing Anthropic creds from the shell/Keychain so the
+  // welcome screen doesn't greet the student with the real Anthropic owner's
+  // name and "API Usage Billing".
   const cleanEnv = { ...process.env };
   delete cleanEnv.ANTHROPIC_API_KEY;
+  delete cleanEnv.ANTHROPIC_AUTH_TOKEN;
   delete cleanEnv.ANTHROPIC_VERTEX_PROJECT_ID;
   delete cleanEnv.ANTHROPIC_BEDROCK_BASE_URL;
 
   const env = {
     ...cleanEnv,
     ANTHROPIC_BASE_URL: hub.baseUrl,
-    ANTHROPIC_AUTH_TOKEN: PLACEHOLDER_TOKEN,
+    // --bare mode requires ANTHROPIC_API_KEY (OAuth token is ignored).
+    // Our proxy doesn't actually validate this — any non-empty value works.
+    ANTHROPIC_API_KEY: PLACEHOLDER_TOKEN,
     // Isolate config/credentials: own dir, separate from ~/.claude/
     ANTHROPIC_CONFIG_DIR: CLAUDE_CONFIG_DIR,
     DISABLE_AUTOUPDATER: '1',
@@ -38,7 +41,14 @@ export async function launchClaude(paths, hub /*, detection */) {
     ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5',
   };
 
-  const passthroughArgs = process.argv.slice(2).filter(a => !['doctor', 'upgrade'].includes(a));
+  // --bare mode: skips Keychain reads, plugin sync, auto-memory, attribution,
+  // CLAUDE.md auto-discovery — i.e. everything that would leak the user's
+  // real Anthropic identity into the welcome screen.
+  // Set KRASAVACODE_BARE=0 to disable for debugging.
+  const useBare = process.env.KRASAVACODE_BARE !== '0';
+  const passthroughArgs = process.argv.slice(2)
+    .filter(a => !['doctor', 'upgrade', 'setup-gemini', 'gemini'].includes(a));
+  if (useBare && !passthroughArgs.includes('--bare')) passthroughArgs.unshift('--bare');
 
   const W = 64;
   const line = (txt) => {
