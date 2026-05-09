@@ -9,7 +9,7 @@ import { runSetup } from '../src/setup.js';
 import { configuredProviders } from '../src/providers.js';
 
 // Hardcoded so it works inside Bun --compile (no FS access to package.json)
-const VERSION = '0.4.12';
+const VERSION = '0.4.13';
 
 const cmd = process.argv[2];
 

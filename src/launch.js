@@ -4,6 +4,7 @@ import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 import { configuredProviders, PROVIDERS } from './providers.js';
 import { getCooldowns } from './cooldowns.js';
+import { STUDENT_SYSTEM_PROMPT } from './system-prompt.js';
 
 const PLACEHOLDER_TOKEN = 'sk-krasavacode-local';
 const CLAUDE_CONFIG_DIR = join(homedir(), '.krasavacode', 'claude-config');
@@ -91,6 +92,14 @@ export async function launchClaude(paths, hub /*, detection */) {
   // is in. settings.json seeds this too, but --add-dir is per-session safety.
   if (!passthroughArgs.some(a => a === '--add-dir')) {
     passthroughArgs.push('--add-dir', homedir());
+  }
+  // Append our "teacher of vibecoding" system prompt unless user explicitly
+  // overrode it with their own --append-system-prompt or --system-prompt.
+  const hasOwnSystemPrompt = passthroughArgs.some(a =>
+    a === '--system-prompt' || a === '--append-system-prompt' || a === '--system-prompt-file'
+  );
+  if (!hasOwnSystemPrompt && process.env.KRASAVACODE_NO_TEACHER !== '1') {
+    passthroughArgs.push('--append-system-prompt', STUDENT_SYSTEM_PROMPT);
   }
 
   const W = 64;
