@@ -74,6 +74,57 @@ function readJsonBody(req, max = 8 * 1024) {
   });
 }
 
+// Pre-written prompts for first projects. Each is engineered so Claude Code
+// outputs something visible quickly and explains how to open it.
+const FIRST_PROJECTS = [
+  {
+    id: 'tetris',
+    emoji: '🎮',
+    title: 'Игра Тетрис',
+    desc: 'Классика в браузере, всё в одном HTML-файле',
+    duration: '5 минут',
+    prompt:
+      'Сделай в подпапке tetris/ файл index.html — рабочую игру Тетрис. ' +
+      'Один файл, без зависимостей. Используй Canvas API. ' +
+      'Управление стрелками: ←→ двигать, ↑ повернуть, ↓ ускорить, пробел — мгновенно вниз. ' +
+      'После того как файл готов, скажи мне одной строкой: "Открой файл tetris/index.html в браузере (двойной клик)".',
+  },
+  {
+    id: 'card',
+    emoji: '🌐',
+    title: 'Сайт-визитка',
+    desc: 'Страничка обо мне с фото и контактами',
+    duration: '5 минут',
+    prompt:
+      'Сделай в подпапке card/ простую персональную сайт-визитку (один index.html со встроенным CSS). ' +
+      'Сначала спроси меня: 1) имя, 2) одно увлечение, 3) одну ссылку (Telegram/Instagram/etc). ' +
+      'Не задавай больше вопросов — после моих ответов сразу делай страницу. ' +
+      'Современный дизайн, тёмная тема, центрирование. ' +
+      'Готовое — скажи: "Открой файл card/index.html в браузере".',
+  },
+  {
+    id: 'pomodoro',
+    emoji: '⏰',
+    title: 'Pomodoro-таймер',
+    desc: 'Помощник для учёбы — 25 минут работы, 5 отдыха',
+    duration: '5 минут',
+    prompt:
+      'Сделай в подпапке pomodoro/ файл index.html — Pomodoro-таймер. ' +
+      'Один файл с встроенным CSS и JavaScript. ' +
+      'Большой таймер по центру, кнопки «Старт/Пауза/Сброс», переключение режима 25-минутной работы и 5-минутного отдыха. ' +
+      'Звуковой сигнал при окончании. ' +
+      'Готовое — скажи: "Открой файл pomodoro/index.html в браузере".',
+  },
+  {
+    id: 'custom',
+    emoji: '✨',
+    title: 'Свой проект',
+    desc: 'У меня уже есть идея, начну с чистого листа',
+    duration: 'когда захочешь',
+    prompt: null, // null означает «без авто-промпта»
+  },
+];
+
 function html() {
   // ── HTML страницы ───────────────────────────────────────────────
   // Три таба: Cerebras / Groq / Gemini. Inline CSS, dark/light theme.
@@ -190,6 +241,7 @@ function html() {
   </div>
 
 <script>
+window.__FIRST_PROJECTS = ${JSON.stringify(FIRST_PROJECTS.map(({ id, emoji, title, desc, duration }) => ({ id, emoji, title, desc, duration })))};
 const tabs = document.querySelectorAll('[data-tab-button]');
 const contents = document.querySelectorAll('[data-tab]');
 
@@ -253,11 +305,61 @@ document.querySelectorAll('[data-action="verify"]').forEach(btn => {
 
 document.querySelector('[data-action="done"]').addEventListener('click', async (e) => {
   e.preventDefault();
-  await fetch('/api/done', { method: 'POST' });
-  // Show "switch back to Terminal" hint then try to close the tab.
-  document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:system-ui;text-align:center;padding:24px;"><div><div style="font-size:64px;margin-bottom:16px;">✅</div><h1 style="font-size:28px;margin:0 0 12px;">Готово!</h1><p style="font-size:18px;color:#65656d;margin:0 0 8px;max-width:520px;">Возвращайся в окно <b>Терминала</b> — оно само открыло вайбкодинг.</p><p style="font-size:14px;color:#8b8b94;">Mac: <kbd>⌘+Tab</kbd> &nbsp;·&nbsp; Windows: <kbd>Alt+Tab</kbd></p><p style="font-size:13px;color:#8b8b94;margin-top:32px;">Эту вкладку можно закрыть.</p></div></div>';
-  setTimeout(() => { try { window.close(); } catch {} }, 4000);
+  // Show project picker instead of closing right away.
+  showProjectPicker();
 });
+
+function showProjectPicker() {
+  const projects = window.__FIRST_PROJECTS || [];
+  const cards = projects.map(p => \`
+    <button class="project-card" data-project-id="\${p.id}">
+      <div class="project-emoji">\${p.emoji}</div>
+      <div class="project-title">\${p.title}</div>
+      <div class="project-desc">\${p.desc}</div>
+      <div class="project-duration">⏱ \${p.duration}</div>
+    </button>
+  \`).join('');
+  document.body.innerHTML = \`
+    <style>
+      .picker-wrap { max-width:780px; margin:0 auto; padding:32px 16px; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif; }
+      h1.picker-h { font-size:32px; margin:0 0 8px; letter-spacing:-.5px; }
+      p.picker-sub { color:#65656d; margin:0 0 28px; font-size:16px; }
+      .project-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px; }
+      .project-card { display:flex; flex-direction:column; padding:20px; border:2px solid #e3e3eb; border-radius:16px; background:#fff; cursor:pointer; transition:all .15s; text-align:left; font:inherit; }
+      .project-card:hover { border-color:#1a73e8; transform:translateY(-2px); box-shadow:0 8px 24px rgba(26,115,232,.15); }
+      .project-emoji { font-size:36px; margin-bottom:8px; }
+      .project-title { font-size:17px; font-weight:600; margin-bottom:4px; color:#1d1d1f; }
+      .project-desc { font-size:13px; color:#65656d; line-height:1.4; flex:1; }
+      .project-duration { margin-top:10px; font-size:12px; color:#8b8b94; }
+      @media (prefers-color-scheme:dark) {
+        body { background:#1a1a1f; color:#f0f0f5; }
+        .picker-sub { color:#8b8b94; }
+        .project-card { background:#232328; border-color:#3a3a42; color:#f0f0f5; }
+        .project-card:hover { border-color:#4a90e2; }
+        .project-title { color:#f0f0f5; }
+        .project-desc { color:#b8b8c0; }
+      }
+    </style>
+    <div class="picker-wrap">
+      <h1 class="picker-h">🎉 Подключено!</h1>
+      <p class="picker-sub">Выбери первый проект — KRASAVACODE начнёт делать его сам, а ты посмотришь и подключишься.</p>
+      <div class="project-grid">\${cards}</div>
+    </div>
+  \`;
+  document.querySelectorAll('[data-project-id]').forEach(btn => {
+    btn.addEventListener('click', () => pickProject(btn.dataset.projectId));
+  });
+}
+
+async function pickProject(id) {
+  await fetch('/api/done', {
+    method: 'POST',
+    headers: {'content-type': 'application/json'},
+    body: JSON.stringify({ projectId: id }),
+  });
+  document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:system-ui;text-align:center;padding:24px;"><div><div style="font-size:64px;margin-bottom:16px;">✅</div><h1 style="font-size:28px;margin:0 0 12px;">Поехали!</h1><p style="font-size:18px;color:#65656d;margin:0 0 8px;max-width:520px;">Возвращайся в окно <b>Терминала</b> — KRASAVACODE уже работает над твоим проектом.</p><p style="font-size:14px;color:#8b8b94;">Mac: <kbd>⌘+Tab</kbd> &nbsp;·&nbsp; Windows: <kbd>Alt+Tab</kbd></p><p style="font-size:13px;color:#8b8b94;margin-top:32px;">Эту вкладку можно закрыть.</p></div></div>';
+  setTimeout(() => { try { window.close(); } catch {} }, 4000);
+}
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -313,12 +415,24 @@ async function browserOnboarding() {
       }
     }
     if (req.method === 'POST' && (req.url === '/api/done' || req.url === '/api/cancel')) {
+      let projectId = null;
+      if (req.url === '/api/done') {
+        try {
+          const body = await readJsonBody(req).catch(() => ({}));
+          projectId = body?.projectId || null;
+        } catch {}
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end('{}');
       const ok = req.url === '/api/done';
       setTimeout(async () => {
         const cfg = await configuredProviders();
-        resolveResult({ launchAfter: ok, configured: cfg });
+        const project = FIRST_PROJECTS.find(p => p.id === projectId);
+        resolveResult({
+          launchAfter: ok,
+          configured: cfg,
+          firstPrompt: project?.prompt || null,
+        });
       }, 100);
       return;
     }

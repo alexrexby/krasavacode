@@ -10,7 +10,7 @@ import { runReset } from '../src/reset.js';
 import { configuredProviders } from '../src/providers.js';
 
 // Hardcoded so it works inside Bun --compile (no FS access to package.json)
-const VERSION = '0.5.1';
+const VERSION = '0.5.2';
 
 const cmd = process.argv[2];
 
@@ -28,16 +28,17 @@ async function main() {
   // First-run auto-setup: if no providers are connected, force the wizard
   // before going to the chat. The user shouldn't have to know about
   // "krasavacode setup" — they just clicked the desktop icon.
+  let firstPrompt = null;
   if (isExplicitSetup || (!cmd && (await configuredProviders()).length === 0)) {
     if (!isExplicitSetup) {
       console.log('');
       console.log('  👋 Первый запуск — давай подключим бесплатные ИИ за минуту.');
-      console.log('     Сейчас откроется окно в браузере с тремя вкладками:');
-      console.log('     Cerebras (главный), Groq, Gemini.');
+      console.log('     Сейчас откроется окно в браузере с вкладками для подключения.');
       console.log('');
     }
     const result = await runSetup();
     if (!result?.launchAfter) return;
+    firstPrompt = result?.firstPrompt || null;
     // fall through to normal launch flow below
   }
 
@@ -48,7 +49,7 @@ async function main() {
   process.on('SIGINT', () => stopHub(hub).then(() => process.exit(0)));
   process.on('SIGTERM', () => stopHub(hub).then(() => process.exit(0)));
 
-  await launchClaude(paths, hub);
+  await launchClaude(paths, hub, { firstPrompt });
 
   await stopHub(hub);
 }

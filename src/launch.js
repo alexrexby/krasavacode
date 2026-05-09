@@ -63,7 +63,8 @@ async function ensureProjectsDir() {
   return PROJECTS_DIR;
 }
 
-export async function launchClaude(paths, hub /*, detection */) {
+export async function launchClaude(paths, hub, opts = {}) {
+  const { firstPrompt } = opts;
   const configured = await configuredProviders();
   const cooldowns = await getCooldowns();
 
@@ -132,6 +133,12 @@ export async function launchClaude(paths, hub /*, detection */) {
   );
   if (!hasOwnSystemPrompt && process.env.KRASAVACODE_NO_TEACHER !== '1') {
     passthroughArgs.push('--append-system-prompt', STUDENT_SYSTEM_PROMPT);
+  }
+  // First-project onboarding: pass the picked prompt as the positional
+  // argument to claude. Claude Code starts an interactive session AND
+  // immediately processes this first prompt.
+  if (firstPrompt) {
+    passthroughArgs.push(firstPrompt);
   }
 
   const W = 64;
