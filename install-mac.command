@@ -42,7 +42,9 @@ curl --fail --location --progress-bar -o "$BIN_PATH" "$URL"
 chmod +x "$BIN_PATH"
 xattr -d com.apple.quarantine "$BIN_PATH" 2>/dev/null || true
 
-# Кладём на рабочий стол ярлык, который дабл-кликается
+# Кладём на рабочий стол ярлык, который дабл-кликается.
+# Скрипт сам определит, нужно ли запустить setup (если провайдеры
+# не подключены) или сразу запустить вайбкодинг.
 cat > "$SHORTCUT" <<EOF
 #!/bin/bash
 cd "\$HOME"

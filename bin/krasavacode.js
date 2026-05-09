@@ -6,23 +6,37 @@ import { launchClaude } from '../src/launch.js';
 import { runUpgrade } from '../src/upgrade.js';
 import { runDoctor } from '../src/doctor.js';
 import { runSetup } from '../src/setup.js';
+import { configuredProviders } from '../src/providers.js';
 
 // Hardcoded so it works inside Bun --compile (no FS access to package.json)
-const VERSION = '0.4.10';
+const VERSION = '0.4.11';
 
 const cmd = process.argv[2];
 
 async function main() {
   if (cmd === 'doctor') return runDoctor();
   if (cmd === 'upgrade') return runUpgrade();
-  if (cmd === 'setup' || cmd === 'setup-gemini' || cmd === 'gemini') {
-    const result = await runSetup();
-    if (!result?.launchAfter) return;
-    // fall through to normal launch flow below
-  }
   if (cmd === '--version' || cmd === '-v') {
     console.log(`KRASAVACODE v${VERSION}`);
     return;
+  }
+
+  const isExplicitSetup = cmd === 'setup' || cmd === 'setup-gemini' || cmd === 'gemini';
+
+  // First-run auto-setup: if no providers are connected, force the wizard
+  // before going to the chat. The user shouldn't have to know about
+  // "krasavacode setup" — they just clicked the desktop icon.
+  if (isExplicitSetup || (!cmd && (await configuredProviders()).length === 0)) {
+    if (!isExplicitSetup) {
+      console.log('');
+      console.log('  👋 Первый запуск — давай подключим бесплатные ИИ за минуту.');
+      console.log('     Сейчас откроется окно в браузере с тремя вкладками:');
+      console.log('     Cerebras (главный), Groq, Gemini.');
+      console.log('');
+    }
+    const result = await runSetup();
+    if (!result?.launchAfter) return;
+    // fall through to normal launch flow below
   }
 
   const paths = await ensureRuntime();

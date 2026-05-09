@@ -71,14 +71,8 @@ export async function launchClaude(paths, hub /*, detection */) {
   console.log(line('  Бесплатный вайбкодинг через локальный hub'));
   console.log('┣' + '━'.repeat(W - 1) + '┫');
   if (configured.length === 0) {
-    console.log(line('  ⚠️  Ни одного ИИ-провайдера не подключено!'));
-    console.log(line('     Сейчас работает простая модель Pollinations.'));
-    console.log(line('     Чтобы подключить нормальные модели — закрой это'));
-    console.log(line('     окно (нажми Ctrl+C) и запусти эту команду:'));
-    console.log(line(''));
-    console.log(line('       krasavacode setup'));
-    console.log(line(''));
-    console.log(line('     Cerebras = 14 400 запросов/день, бесплатно, без карты'));
+    console.log(line('  Pollinations (gpt-oss-20b) — простая модель'));
+    console.log(line('  Чтобы поднять качество: krasavacode setup'));
   } else {
     console.log(line('  Активная цепочка фолбэков:'));
     let i = 1;
