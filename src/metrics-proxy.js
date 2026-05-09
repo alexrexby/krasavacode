@@ -101,13 +101,45 @@ const FRIENDLY_429 = () => ({
   },
 });
 
+/**
+ * Cerebras is stricter than typical OpenAI-compatible endpoints:
+ *   - rejects unknown fields like `cache_control` (Anthropic) or `reasoning`
+ *   - requires content as plain string in some message types, not arrays
+ *
+ * Pre-process Anthropic payload before ccr translates it, so the resulting
+ * upstream request is clean enough for Cerebras's strict validator.
+ */
+function cleanForCerebras(parsed) {
+  delete parsed.reasoning;
+  delete parsed.thinking;
+
+  const stripCacheControl = (block) => {
+    if (block && typeof block === 'object') delete block.cache_control;
+    return block;
+  };
+
+  if (Array.isArray(parsed.system)) {
+    parsed.system = parsed.system.map(stripCacheControl);
+  } else if (parsed.system && typeof parsed.system === 'object') {
+    stripCacheControl(parsed.system);
+  }
+
+  if (Array.isArray(parsed.messages)) {
+    for (const m of parsed.messages) {
+      if (Array.isArray(m.content)) {
+        m.content = m.content.map(stripCacheControl);
+      } else if (m.content && typeof m.content === 'object') {
+        stripCacheControl(m.content);
+      }
+    }
+  }
+}
+
 function rewriteBodyWithProvider(originalBody, providerId, modelName) {
-  // claude-code-router treats body.model in form "provider,modelName" as a
-  // direct route, bypassing Router config. We use that to fully control
-  // provider selection from the proxy layer.
   try {
     const parsed = JSON.parse(originalBody);
     parsed.model = `${providerId},${modelName}`;
+    if (providerId === 'cerebras') cleanForCerebras(parsed);
     return Buffer.from(JSON.stringify(parsed));
   } catch {
     return originalBody;
@@ -184,7 +216,10 @@ export async function startMetricsProxy(upstreamBaseUrl) {
 
         if (debug) console.error(`[metrics] attempt ${attempt} → ${upRes.statusCode}`);
 
-        if (upRes.statusCode !== 429) {
+        // 429 / 400 (incompatible payload) → mark cooldown and retry next provider.
+        // Other non-2xx → pass through to client.
+        const isRetryable = upRes.statusCode === 429 || upRes.statusCode === 400;
+        if (!isRetryable) {
           if (upRes.statusCode >= 200 && upRes.statusCode < 300) {
             bump(choice.id).catch(() => {});
           }
@@ -193,19 +228,23 @@ export async function startMetricsProxy(upstreamBaseUrl) {
           return;
         }
 
-        // 429 — buffer body, set cooldown for THIS provider, retry with next
         const errChunks = [];
         upRes.on('data', d => errChunks.push(d));
         await new Promise(r => upRes.on('end', r));
         const upBody = Buffer.concat(errChunks).toString('utf8');
-        if (debug) console.error(`[metrics] 429 from ${choice.id}: ${upBody.slice(0, 200)}`);
+        if (debug) console.error(`[metrics] ${upRes.statusCode} from ${choice.id}: ${upBody.slice(0, 200)}`);
 
-        const reason = parseQuotaReason(upBody);
-        // Pollinations has no daily quota — only short burst-throttling.
-        // Treat its 429 as a 60s cooldown so we don't block it until tomorrow.
-        const effectiveReason = choice.id === 'pollinations' ? 'per-minute' : reason;
+        let effectiveReason;
+        if (upRes.statusCode === 400) {
+          // 400 = payload issue (incompatibility, schema mismatch). Skip provider
+          // for an hour so we stop banging head against the wall.
+          effectiveReason = 'per-hour';
+        } else if (choice.id === 'pollinations') {
+          effectiveReason = 'per-minute';
+        } else {
+          effectiveReason = parseQuotaReason(upBody);
+        }
         await setCooldown(choice.id, cooldownUntil(effectiveReason));
-        // loop continues — next iteration picks a different provider
       }
 
       // Exhausted attempts

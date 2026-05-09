@@ -41,10 +41,14 @@ export async function isOnCooldown(providerId) {
   return new Date(cd[providerId]).getTime() > Date.now();
 }
 
-/** Compute when to lift cooldown based on the 429 reason. */
+/** Compute when to lift cooldown based on the failure reason. */
 export function cooldownUntil(reason) {
   if (reason === 'per-minute') {
     return new Date(Date.now() + 60_000);
+  }
+  if (reason === 'per-hour') {
+    // Used for 400-incompatibility errors. Stops thrashing without permanently disabling the provider.
+    return new Date(Date.now() + 60 * 60_000);
   }
   // per-day or unknown — until 11:00 MSK tomorrow (≈ midnight Pacific reset)
   const next = new Date();
