@@ -32,10 +32,23 @@ async function waitForHealthy(timeoutMs) {
 export async function startHub(paths) {
   const baseUrl = `http://${HOST}:${PORT}`;
 
-  // CCR is a singleton: one server per machine on port 3456. If something
-  // is already there, hope it's a healthy CCR — don't start a second one.
+  // If a previous ccr is still running on 3456, it holds a stale config
+  // (e.g. old PROVIDER_PRIORITY order) and won't pick up our updated
+  // ~/.claude-code-router/config.json. Kill it so we can spawn fresh.
   if (await isAlreadyRunning()) {
-    return { process: null, port: PORT, baseUrl, ownedByUs: false };
+    process.stdout.write('🔄 Перезапускаю старый gateway… ');
+    try {
+      const { spawn: _spawn } = await import('node:child_process');
+      // pkill matches the ccr cli script name in argv
+      _spawn('pkill', ['-9', '-f', 'claude-code-router/dist/cli.js'], { stdio: 'ignore' });
+      _spawn('pkill', ['-9', '-f', 'ccr start'], { stdio: 'ignore' });
+    } catch {}
+    // Wait for port to actually free up
+    for (let i = 0; i < 20; i++) {
+      await sleep(200);
+      if (!(await isAlreadyRunning())) break;
+    }
+    console.log('OK');
   }
 
   process.stdout.write(`🚀 Поднимаю локальный gateway на порту ${PORT}… `);
