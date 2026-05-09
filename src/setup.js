@@ -53,6 +53,38 @@ function isHeadlessLinux() {
   return !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY;
 }
 
+// Try to find a public IPv4 (the one through which incoming connections work).
+// Falls back to first non-loopback interface if external check fails.
+async function getPublicIP() {
+  const services = [
+    'https://api.ipify.org',
+    'https://ifconfig.me/ip',
+    'https://icanhazip.com',
+  ];
+  for (const url of services) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(4000) });
+      if (res.ok) {
+        const ip = (await res.text()).trim();
+        if (/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) return ip;
+      }
+    } catch {}
+  }
+  // Local fallback: first non-loopback IPv4
+  const { networkInterfaces } = await import('node:os');
+  for (const iface of Object.values(networkInterfaces())) {
+    for (const a of iface || []) {
+      if (a.family === 'IPv4' && !a.internal) return a.address;
+    }
+  }
+  return null;
+}
+
+import { randomBytes } from 'node:crypto';
+function generateToken() {
+  return randomBytes(18).toString('base64url'); // 24 chars, URL-safe
+}
+
 async function readState() { try { return JSON.parse(await readFile(STATE_FILE, 'utf8')); } catch { return {}; } }
 async function writeState(s) { await writeFile(STATE_FILE, JSON.stringify(s, null, 2)); }
 
@@ -148,7 +180,8 @@ const FIRST_PROJECTS = [
   },
 ];
 
-function html() {
+function html(token) {
+  const tokenSuffix = token ? `?token=${token}` : '';
   // ── HTML страницы ───────────────────────────────────────────────
   // Три таба: Cerebras / Groq / Gemini. Inline CSS, dark/light theme.
   const cards = PROVIDER_PRIORITY.map(id => {
@@ -265,6 +298,26 @@ function html() {
 
 <script>
 window.__FIRST_PROJECTS = ${JSON.stringify(FIRST_PROJECTS.map(({ id, emoji, title, desc, duration }) => ({ id, emoji, title, desc, duration })))};
+// In public mode every API call must carry the token. Wrap fetch globally.
+const __TOKEN = ${JSON.stringify(token || '')};
+if (__TOKEN) {
+  const _fetch = window.fetch.bind(window);
+  window.fetch = (url, opts = {}) => {
+    if (typeof url === 'string' && url.startsWith('/api/')) {
+      url += (url.includes('?') ? '&' : '?') + 'token=' + __TOKEN;
+    }
+    return _fetch(url, opts);
+  };
+  const _beacon = navigator.sendBeacon?.bind(navigator);
+  if (_beacon) {
+    navigator.sendBeacon = (url, data) => {
+      if (typeof url === 'string' && url.startsWith('/api/')) {
+        url += (url.includes('?') ? '&' : '?') + 'token=' + __TOKEN;
+      }
+      return _beacon(url, data);
+    };
+  }
+}
 const tabs = document.querySelectorAll('[data-tab-button]');
 const contents = document.querySelectorAll('[data-tab]');
 
@@ -396,17 +449,40 @@ window.addEventListener('beforeunload', () => {
 </html>`;
 }
 
-async function browserOnboarding() {
-  const port = await getFreePort();
-  const url = `http://127.0.0.1:${port}`;
+async function browserOnboarding({ publicMode = false } = {}) {
+  const port = publicMode ? 8080 : await getFreePort();
+  const host = publicMode ? '0.0.0.0' : '127.0.0.1';
+  const token = publicMode ? generateToken() : null;
+
+  // For local mode the URL is what we open in browser via openBrowser();
+  // for public mode we print the URL with public IP + token for the student.
+  const localUrl = `http://127.0.0.1:${port}${token ? `/?token=${token}` : ''}`;
+  let publicUrl = null;
+  if (publicMode) {
+    const ip = await getPublicIP();
+    publicUrl = ip ? `http://${ip}:${port}/?token=${token}` : null;
+  }
 
   let resolveResult;
   const done = new Promise(r => { resolveResult = r; });
 
+  function checkToken(req) {
+    if (!token) return true; // local mode — no auth needed
+    const urlToken = (req.url || '').match(/[?&]token=([^&]+)/)?.[1];
+    const headerToken = req.headers['x-token'];
+    return urlToken === token || headerToken === token;
+  }
+
   const server = http.createServer(async (req, res) => {
+    // Public-mode auth: every request must carry the token (URL ?token=
+    // for the initial GET and ?token= or x-token header for /api/...).
+    if (!checkToken(req)) {
+      res.writeHead(403, { 'Content-Type': 'text/plain' });
+      return res.end('forbidden — wrong or missing token');
+    }
     if (req.method === 'GET' && (req.url === '/' || req.url.startsWith('/?'))) {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      return res.end(html());
+      return res.end(html(token));
     }
     if (req.method === 'GET' && req.url === '/api/status') {
       const cfg = await configuredProviders();
@@ -463,17 +539,35 @@ async function browserOnboarding() {
     res.end();
   });
 
-  server.listen(port, '127.0.0.1');
+  server.listen(port, host);
 
-  const opened = openBrowser(url);
   console.log('');
   console.log('  ╔═══════════════════════════════════════════════════╗');
   console.log('  ║  KRASAVACODE — подключаем AI-провайдеров          ║');
   console.log('  ╚═══════════════════════════════════════════════════╝');
   console.log('');
-  if (opened) console.log(`  🌐 Открыл настройку в браузере: ${url}`);
-  else console.log(`  Скопируй и открой: ${url}`);
-  console.log('  Можно подключить один или несколько (для надёжности).');
+  if (publicMode) {
+    if (publicUrl) {
+      console.log(`  🌐 Открой эту ссылку в браузере на любом устройстве:`);
+      console.log('');
+      console.log(`     ${publicUrl}`);
+      console.log('');
+      console.log('  ⚠️  Ссылка содержит одноразовый токен. Никому не показывай —');
+      console.log('     любой кто откроет сможет подключить свои API-ключи.');
+    } else {
+      console.log('  Не удалось определить публичный IP сервера.');
+      console.log(`  Сервер слушает на порту ${port}, открой в браузере:`);
+      console.log(`     http://<IP-сервера>:${port}/?token=${token}`);
+    }
+    console.log('');
+    console.log('  Если ничего не открывается — порт может быть закрыт');
+    console.log('  файрволом твоего хостера. Тогда вернись в SSH и нажми Ctrl+C.');
+  } else {
+    const opened = openBrowser(localUrl);
+    if (opened) console.log(`  🌐 Открыл настройку в браузере: ${localUrl}`);
+    else console.log(`  Скопируй и открой: ${localUrl}`);
+    console.log('  Можно подключить один или несколько (для надёжности).');
+  }
   console.log('');
   console.log('  Ctrl+C — отменить.');
   console.log('');
@@ -558,14 +652,23 @@ async function cliOnboarding() {
 
 export async function runSetup() {
   const headless = isHeadlessLinux();
-  if (headless) {
-    console.log('  (Linux без GUI — открываю текстовый мастер)');
+
+  // Headless Linux (Ubuntu Server / SSH-only) → public-mode wizard:
+  // listen on 0.0.0.0, print a token-protected URL, student opens it
+  // in any browser on any device.
+  if (headless && process.env.KRASAVACODE_NO_BROWSER !== '1') {
+    try { return await browserOnboarding({ publicMode: true }); }
+    catch (e) {
+      console.error('  Публичный wizard не запустился:', e.message);
+      console.log('  Переключаюсь на текстовый мастер.');
+      return cliOnboarding();
+    }
   }
-  const useBrowser = !headless
-    && process.env.KRASAVACODE_NO_BROWSER !== '1'
+
+  const useBrowser = process.env.KRASAVACODE_NO_BROWSER !== '1'
     && process.stdout.isTTY !== false;
   if (useBrowser) {
-    try { return await browserOnboarding(); }
+    try { return await browserOnboarding({ publicMode: false }); }
     catch (e) {
       console.error('  Браузерный мастер упал:', e.message);
       return cliOnboarding();
