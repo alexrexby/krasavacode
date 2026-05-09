@@ -254,7 +254,9 @@ document.querySelectorAll('[data-action="verify"]').forEach(btn => {
 document.querySelector('[data-action="done"]').addEventListener('click', async (e) => {
   e.preventDefault();
   await fetch('/api/done', { method: 'POST' });
-  window.close();
+  // Show "switch back to Terminal" hint then try to close the tab.
+  document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;font-family:system-ui;text-align:center;padding:24px;"><div><div style="font-size:64px;margin-bottom:16px;">✅</div><h1 style="font-size:28px;margin:0 0 12px;">Готово!</h1><p style="font-size:18px;color:#65656d;margin:0 0 8px;max-width:520px;">Возвращайся в окно <b>Терминала</b> — оно само открыло вайбкодинг.</p><p style="font-size:14px;color:#8b8b94;">Mac: <kbd>⌘+Tab</kbd> &nbsp;·&nbsp; Windows: <kbd>Alt+Tab</kbd></p><p style="font-size:13px;color:#8b8b94;margin-top:32px;">Эту вкладку можно закрыть.</p></div></div>';
+  setTimeout(() => { try { window.close(); } catch {} }, 4000);
 });
 
 function escapeHtml(s) {

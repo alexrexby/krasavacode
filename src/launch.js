@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
-import { homedir } from 'node:os';
+import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 import { configuredProviders, PROVIDERS } from './providers.js';
 import { getCooldowns } from './cooldowns.js';
@@ -11,6 +11,15 @@ const CLAUDE_CONFIG_DIR = join(homedir(), '.krasavacode', 'claude-config');
 export async function launchClaude(paths, hub /*, detection */) {
   const configured = await configuredProviders();
   const cooldowns = await getCooldowns();
+
+  // After a successful browser-setup the user is in their browser, not the
+  // Terminal window where claude is about to run. Bring Terminal to front so
+  // they don't miss that the chat has already started.
+  if (platform() === 'darwin') {
+    spawn('osascript', ['-e', 'tell application "Terminal" to activate'],
+      { stdio: 'ignore', detached: true }).unref();
+  }
+
   // Isolate Claude Code's config/credentials from any real Anthropic login
   // the student may have on this machine (~/.claude/). This is the *only*
   // way to suppress the "Welcome back, NAME · publerplatforma@gmail.com's
