@@ -110,6 +110,12 @@ async function persistKey(providerId, key) {
   state.lastSetupAt = new Date().toISOString();
   state.lastConfiguredProvider = providerId;
   await writeState(state);
+  // After successfully validating a fresh key, clear any stale cooldown
+  // for this provider so the user isn't blocked by yesterday's 401.
+  try {
+    const { clearCooldown } = await import('./cooldowns.js');
+    await clearCooldown(providerId);
+  } catch {}
 }
 
 function readJsonBody(req, max = 8 * 1024) {
