@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
+import { mkdir, writeFile } from 'node:fs/promises';
 import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 import { configuredProviders, PROVIDERS } from './providers.js';
@@ -7,6 +7,33 @@ import { getCooldowns } from './cooldowns.js';
 
 const PLACEHOLDER_TOKEN = 'sk-krasavacode-local';
 const CLAUDE_CONFIG_DIR = join(homedir(), '.krasavacode', 'claude-config');
+
+/**
+ * Pre-populate Claude Code's settings.json with answers to the onboarding
+ * prompts so the student isn't asked:
+ *   1. "Quick safety check: Is this a project you trust?" (workspace trust)
+ *   2. "Detected a custom API key. Do you want to use it?" (custom-key dialog)
+ *
+ * These prompts are blockers for non-technical users — they don't know what
+ * to answer. Since the bare mode forces our isolated CONFIG_DIR anyway,
+ * pre-filling these acts as if the user already confirmed once.
+ */
+async function seedClaudeSettings() {
+  await mkdir(CLAUDE_CONFIG_DIR, { recursive: true });
+  const settings = {
+    hasTrustDialogAccepted: true,
+    hasCompletedOnboarding: true,
+    skipAutoPermissionPrompt: true,
+    customApiKeyResponses: {
+      approved: [PLACEHOLDER_TOKEN],
+      rejected: [],
+    },
+  };
+  await writeFile(
+    join(CLAUDE_CONFIG_DIR, 'settings.json'),
+    JSON.stringify(settings, null, 2),
+  );
+}
 
 export async function launchClaude(paths, hub /*, detection */) {
   const configured = await configuredProviders();
@@ -24,7 +51,7 @@ export async function launchClaude(paths, hub /*, detection */) {
   // the student may have on this machine (~/.claude/). This is the *only*
   // way to suppress the "Welcome back, NAME · publerplatforma@gmail.com's
   // Organization · API Usage Billing" header on the welcome screen.
-  await mkdir(CLAUDE_CONFIG_DIR, { recursive: true });
+  await seedClaudeSettings();
 
   // Drop any pre-existing Anthropic creds from the shell/Keychain so the
   // welcome screen doesn't greet the student with the real Anthropic owner's
@@ -59,6 +86,12 @@ export async function launchClaude(paths, hub /*, detection */) {
   const passthroughArgs = process.argv.slice(2)
     .filter(a => !['doctor', 'upgrade', 'setup', 'setup-gemini', 'gemini'].includes(a));
   if (useBare && !passthroughArgs.includes('--bare')) passthroughArgs.unshift('--bare');
+  // Tell Claude Code that $HOME is a trusted directory — bypasses the
+  // "trust this folder" dialog regardless of which directory the student
+  // is in. settings.json seeds this too, but --add-dir is per-session safety.
+  if (!passthroughArgs.some(a => a === '--add-dir')) {
+    passthroughArgs.push('--add-dir', homedir());
+  }
 
   const W = 64;
   const line = (txt) => {
