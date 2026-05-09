@@ -265,8 +265,10 @@ export async function startMetricsProxy(upstreamBaseUrl) {
           // setup. Long cooldown (until tomorrow) so we don't waste retries.
           effectiveReason = 'per-day';
         } else if (code === 400) {
-          // Payload incompatibility (Cerebras strict schema, etc) — skip 1 hour.
-          effectiveReason = 'per-hour';
+          // 400 = payload incompatibility (Cerebras strict schema). One hour is
+          // not enough — same payload will fail again. Skip until tomorrow,
+          // student can re-add provider via `krasavacode setup` if needed.
+          effectiveReason = 'incompatible';
         } else if (choice.id === 'pollinations') {
           effectiveReason = 'per-minute';
         } else {

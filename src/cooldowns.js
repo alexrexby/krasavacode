@@ -50,6 +50,15 @@ export function cooldownUntil(reason) {
     // Used for 400-incompatibility errors. Stops thrashing without permanently disabling the provider.
     return new Date(Date.now() + 60 * 60_000);
   }
+  if (reason === 'incompatible') {
+    // Provider returns 400 on EVERY request — payload schema mismatch.
+    // Skip until tomorrow (matches per-day reset). User can `krasavacode reset`
+    // and reconfigure if they want to re-test.
+    const next = new Date();
+    next.setUTCHours(8, 0, 0, 0);
+    if (next.getTime() < Date.now()) next.setUTCDate(next.getUTCDate() + 1);
+    return next;
+  }
   // per-day or unknown — until 11:00 MSK tomorrow (≈ midnight Pacific reset)
   const next = new Date();
   next.setUTCHours(8, 0, 0, 0); // 11:00 MSK == 08:00 UTC
