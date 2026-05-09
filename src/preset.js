@@ -19,11 +19,12 @@ function pollinationsProvider() {
 }
 
 function geminiProvider() {
+  // gemini-2.5-pro free tier = 0 requests; only flash is actually free.
   return {
     name: 'gemini',
     api_base_url: 'https://generativelanguage.googleapis.com/v1beta/models/',
     api_key: '$GEMINI_API_KEY',
-    models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-flash-latest'],
+    models: ['gemini-2.5-flash', 'gemini-flash-latest'],
     transformer: { use: ['gemini'] },
   };
 }
@@ -37,8 +38,8 @@ function buildConfig({ withGemini }) {
     ? {
         default: 'gemini,gemini-2.5-flash',
         background: 'gemini,gemini-2.5-flash',
-        think: 'gemini,gemini-2.5-pro',
-        longContext: 'gemini,gemini-2.5-pro',
+        think: 'gemini,gemini-2.5-flash',
+        longContext: 'gemini,gemini-2.5-flash',
         longContextThreshold: 60000,
       }
     : {

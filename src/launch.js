@@ -1,10 +1,19 @@
 import { spawn } from 'node:child_process';
+import { mkdir } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { isGeminiConfigured } from './setup-gemini.js';
 
 const PLACEHOLDER_TOKEN = 'sk-krasavacode-local';
+const CLAUDE_CONFIG_DIR = join(homedir(), '.krasavacode', 'claude-config');
 
 export async function launchClaude(paths, hub /*, detection */) {
   const geminiOn = await isGeminiConfigured();
+  // Isolate Claude Code's config/credentials from any real Anthropic login
+  // the student may have on this machine (~/.claude/). This is the *only*
+  // way to suppress the "Welcome back, NAME · publerplatforma@gmail.com's
+  // Organization · API Usage Billing" header on the welcome screen.
+  await mkdir(CLAUDE_CONFIG_DIR, { recursive: true });
 
   // Drop any pre-existing ANTHROPIC_API_KEY (from the user's shell or a real
   // Anthropic login) so it doesn't conflict with our auth-token, and so that
@@ -18,6 +27,8 @@ export async function launchClaude(paths, hub /*, detection */) {
     ...cleanEnv,
     ANTHROPIC_BASE_URL: hub.baseUrl,
     ANTHROPIC_AUTH_TOKEN: PLACEHOLDER_TOKEN,
+    // Isolate config/credentials: own dir, separate from ~/.claude/
+    ANTHROPIC_CONFIG_DIR: CLAUDE_CONFIG_DIR,
     DISABLE_AUTOUPDATER: '1',
     DISABLE_TELEMETRY: '1',
     DISABLE_ERROR_REPORTING: '1',
