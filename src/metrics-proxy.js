@@ -115,34 +115,40 @@ const FRIENDLY_429 = () => ({
 });
 
 /**
- * Cerebras is stricter than typical OpenAI-compatible endpoints:
- *   - rejects unknown fields like `cache_control` (Anthropic) or `reasoning`
- *   - requires content as plain string in some message types, not arrays
+ * Cerebras strict-mode rejects Anthropic-style payloads:
+ *   - content as array of text blocks → must be plain string
+ *   - cache_control on any block → unknown property
+ *   - reasoning / thinking fields → unknown property
  *
- * Pre-process Anthropic payload before ccr translates it, so the resulting
- * upstream request is clean enough for Cerebras's strict validator.
+ * To make it work we collapse arrays-of-text-blocks into joined strings.
+ * This kills prompt caching and tool_use blocks — that's why Cerebras is
+ * placed LAST in PROVIDER_PRIORITY (only used when others on cooldown).
  */
+function flattenTextBlocks(value) {
+  if (typeof value === 'string') return value;
+  if (!value) return '';
+  if (Array.isArray(value)) {
+    return value
+      .filter(b => b && (b.type === 'text' || typeof b.text === 'string'))
+      .map(b => b.text || '')
+      .join('\n\n');
+  }
+  if (typeof value === 'object' && typeof value.text === 'string') return value.text;
+  return '';
+}
+
 function cleanForCerebras(parsed) {
   delete parsed.reasoning;
   delete parsed.thinking;
+  delete parsed.metadata;
 
-  const stripCacheControl = (block) => {
-    if (block && typeof block === 'object') delete block.cache_control;
-    return block;
-  };
-
-  if (Array.isArray(parsed.system)) {
-    parsed.system = parsed.system.map(stripCacheControl);
-  } else if (parsed.system && typeof parsed.system === 'object') {
-    stripCacheControl(parsed.system);
+  if (parsed.system !== undefined) {
+    parsed.system = flattenTextBlocks(parsed.system);
   }
-
   if (Array.isArray(parsed.messages)) {
     for (const m of parsed.messages) {
-      if (Array.isArray(m.content)) {
-        m.content = m.content.map(stripCacheControl);
-      } else if (m.content && typeof m.content === 'object') {
-        stripCacheControl(m.content);
+      if (Array.isArray(m.content) || (m.content && typeof m.content === 'object')) {
+        m.content = flattenTextBlocks(m.content);
       }
     }
   }

@@ -10,7 +10,7 @@ import { runReset } from '../src/reset.js';
 import { configuredProviders } from '../src/providers.js';
 
 // Hardcoded so it works inside Bun --compile (no FS access to package.json)
-const VERSION = '0.5.7';
+const VERSION = '0.5.8';
 
 const cmd = process.argv[2];
 

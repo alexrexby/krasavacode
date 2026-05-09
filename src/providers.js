@@ -221,7 +221,12 @@ export const PROVIDERS = {
   },
 };
 
-export const PROVIDER_PRIORITY = ['cerebras', 'groq', 'openrouter', 'gemini'];
+// Cerebras free тариф: 14400 RPD + 1M TPD = самый щедрый, но strict-mode
+// OpenAI implementation отвергает Anthropic-style content (cache_control,
+// content как массив text-блоков, reasoning). На большинстве запросов Claude
+// Code получает 400. Поэтому Cerebras в конце chain — fallback, когда всё
+// остальное на cooldown.
+export const PROVIDER_PRIORITY = ['groq', 'openrouter', 'gemini', 'cerebras'];
 
 export function pollinationsProvider() {
   return {
