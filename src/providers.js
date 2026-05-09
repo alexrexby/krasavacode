@@ -42,28 +42,23 @@ export const PROVIDERS = {
     tpd: 1_000_000,
     rpm: 30,
     contextLimit: 8_000,
-    // OpenAI-compatible API
+    // Verify via /models — model-name agnostic and gives instant feedback.
     verify: async (key) => {
-      const res = await fetch('https://api.cerebras.ai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'authorization': `Bearer ${key}`,
-        },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b',
-          messages: [{ role: 'user', content: 'Reply: ok' }],
-          max_tokens: 5,
-        }),
-        signal: AbortSignal.timeout(15000),
-      });
-      if (!res.ok) {
-        let msg = `HTTP ${res.status}`;
-        try { msg = (await res.json())?.error?.message || msg; } catch {}
-        return { ok: false, error: msg };
+      try {
+        const res = await fetch('https://api.cerebras.ai/v1/models', {
+          headers: { 'authorization': `Bearer ${key}` },
+          signal: AbortSignal.timeout(15000),
+        });
+        if (res.status === 401 || res.status === 403) {
+          return { ok: false, error: 'Ключ не принят. Проверь, что скопировал целиком и аккаунт активирован.' };
+        }
+        if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+        const data = await res.json();
+        const n = data.data?.length || 0;
+        return { ok: true, text: `доступно моделей: ${n}` };
+      } catch (e) {
+        return { ok: false, error: 'Сеть не отвечает: ' + e.message };
       }
-      const data = await res.json();
-      return { ok: true, text: data.choices?.[0]?.message?.content?.trim() || 'ok' };
     },
     ccrProvider: () => ({
       name: 'cerebras',
@@ -94,26 +89,21 @@ export const PROVIDERS = {
     rpm: 30,
     contextLimit: 128_000,
     verify: async (key) => {
-      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'authorization': `Bearer ${key}`,
-        },
-        body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
-          messages: [{ role: 'user', content: 'Reply: ok' }],
-          max_tokens: 5,
-        }),
-        signal: AbortSignal.timeout(15000),
-      });
-      if (!res.ok) {
-        let msg = `HTTP ${res.status}`;
-        try { msg = (await res.json())?.error?.message || msg; } catch {}
-        return { ok: false, error: msg };
+      try {
+        const res = await fetch('https://api.groq.com/openai/v1/models', {
+          headers: { 'authorization': `Bearer ${key}` },
+          signal: AbortSignal.timeout(15000),
+        });
+        if (res.status === 401 || res.status === 403) {
+          return { ok: false, error: 'Ключ не принят. Проверь, что скопировал целиком.' };
+        }
+        if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+        const data = await res.json();
+        const n = data.data?.length || 0;
+        return { ok: true, text: `доступно моделей: ${n}` };
+      } catch (e) {
+        return { ok: false, error: 'Сеть не отвечает: ' + e.message };
       }
-      const data = await res.json();
-      return { ok: true, text: data.choices?.[0]?.message?.content?.trim() || 'ok' };
     },
     ccrProvider: () => ({
       name: 'groq',
@@ -149,23 +139,22 @@ export const PROVIDERS = {
     rpm: 10,
     contextLimit: 1_000_000,
     verify: async (key) => {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(key)}`;
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: 'Reply: ok' }] }],
-          generationConfig: { maxOutputTokens: 20 },
-        }),
-        signal: AbortSignal.timeout(15000),
-      });
-      if (!res.ok) {
-        let msg = `HTTP ${res.status}`;
-        try { msg = (await res.json())?.error?.message || msg; } catch {}
-        return { ok: false, error: msg };
+      // Gemini: ListModels проверяет валидность ключа без расхода квоты.
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`;
+        const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+        if (res.status === 400 || res.status === 401 || res.status === 403) {
+          let detail = '';
+          try { detail = (await res.json())?.error?.message || ''; } catch {}
+          return { ok: false, error: detail || 'Ключ не принят. Проверь, что скопировал целиком из AI Studio.' };
+        }
+        if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+        const data = await res.json();
+        const n = (data.models || []).length;
+        return { ok: true, text: `доступно моделей: ${n}` };
+      } catch (e) {
+        return { ok: false, error: 'Сеть не отвечает: ' + e.message };
       }
-      const data = await res.json();
-      return { ok: true, text: (data.candidates?.[0]?.content?.parts?.[0]?.text || 'ok').trim() };
     },
     ccrProvider: () => ({
       name: 'gemini',
