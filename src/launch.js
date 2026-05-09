@@ -107,9 +107,13 @@ export async function launchClaude(paths, hub, opts = {}) {
     DISABLE_AUTOUPDATER: '1',
     DISABLE_TELEMETRY: '1',
     DISABLE_ERROR_REPORTING: '1',
-    // Tell Claude Code which model to ask for. CCR will route any of these
-    // to Pollinations / Gemini via Router.default.
-    ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-5',
+    // Tell Claude Code which model to ask for. We use the `sonnet` alias —
+    // it always resolves to whichever Sonnet is current in this Claude Code
+    // version (claude-sonnet-4.5 → 4.6 → 4.7…). Hard-coding a numeric
+    // version breaks when Anthropic deprecates it.
+    // CCR sees this as the request "model" but our metrics-proxy rewrites
+    // body.model to "<provider>,<provider-model>" before forwarding.
+    ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL || 'sonnet',
   };
 
   // --bare mode: skips Keychain reads, plugin sync, auto-memory, attribution,
