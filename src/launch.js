@@ -8,6 +8,7 @@ import { STUDENT_SYSTEM_PROMPT } from './system-prompt.js';
 
 const PLACEHOLDER_TOKEN = 'sk-krasavacode-local';
 const CLAUDE_CONFIG_DIR = join(homedir(), '.krasavacode', 'claude-config');
+const PROJECTS_DIR = join(homedir(), 'krasavacode-projects');
 
 /**
  * Pre-populate Claude Code's settings.json with answers to the onboarding
@@ -36,6 +37,32 @@ async function seedClaudeSettings() {
   );
 }
 
+/**
+ * Sandbox: создаём отдельную папку для всех проектов ученика.
+ * Claude Code запускается в ней с cwd, и --add-dir НЕ ставится на $HOME —
+ * это значит claude может читать/писать только внутри этой папки и её
+ * подкаталогов. Documents, Pictures, ключи и т.п. — недоступны.
+ */
+async function ensureProjectsDir() {
+  await mkdir(PROJECTS_DIR, { recursive: true });
+  // README в папке для самого ученика — открывает её в Finder и видит подсказку.
+  const readme = join(PROJECTS_DIR, 'README.txt');
+  try {
+    await writeFile(readme, [
+      'KRASAVACODE — твоя рабочая папка',
+      '',
+      'Здесь живут все проекты, которые ты делаешь через ВАЙБКОДИНГ.',
+      'Каждый проект — отдельная подпапка. Например: tetris/, my-site/.',
+      '',
+      'Программа НЕ может выходить за пределы этой папки —',
+      'твои Documents, Pictures и пароли в безопасности.',
+      '',
+      'Чтобы открыть проект в браузере — найди файл .html и дабл-клик.',
+    ].join('\n'), { flag: 'wx' }); // wx = создать только если нет
+  } catch {} // exists already
+  return PROJECTS_DIR;
+}
+
 export async function launchClaude(paths, hub /*, detection */) {
   const configured = await configuredProviders();
   const cooldowns = await getCooldowns();
@@ -53,6 +80,11 @@ export async function launchClaude(paths, hub /*, detection */) {
   // way to suppress the "Welcome back, NAME · publerplatforma@gmail.com's
   // Organization · API Usage Billing" header on the welcome screen.
   await seedClaudeSettings();
+
+  // Sandbox: claude works inside ~/krasavacode-projects/ (cwd) — can't reach
+  // Documents/Pictures/keys/etc by default. User can opt out with KRASAVACODE_NO_SANDBOX=1.
+  const useSandbox = process.env.KRASAVACODE_NO_SANDBOX !== '1';
+  const cwd = useSandbox ? await ensureProjectsDir() : process.cwd();
 
   // Drop any pre-existing Anthropic creds from the shell/Keychain so the
   // welcome screen doesn't greet the student with the real Anthropic owner's
@@ -85,14 +117,14 @@ export async function launchClaude(paths, hub /*, detection */) {
   // Set KRASAVACODE_BARE=0 to disable for debugging.
   const useBare = process.env.KRASAVACODE_BARE !== '0';
   const passthroughArgs = process.argv.slice(2)
-    .filter(a => !['doctor', 'upgrade', 'setup', 'setup-gemini', 'gemini'].includes(a));
+    .filter(a => !['doctor', 'upgrade', 'setup', 'setup-gemini', 'gemini', 'reset'].includes(a));
   if (useBare && !passthroughArgs.includes('--bare')) passthroughArgs.unshift('--bare');
   // Tell Claude Code that $HOME is a trusted directory — bypasses the
   // "trust this folder" dialog regardless of which directory the student
   // is in. settings.json seeds this too, but --add-dir is per-session safety.
-  if (!passthroughArgs.some(a => a === '--add-dir')) {
-    passthroughArgs.push('--add-dir', homedir());
-  }
+  // We deliberately do NOT add $HOME to --add-dir — that would defeat the
+  // sandbox. Claude Code's default tool-access scope is its cwd, which is
+  // ~/krasavacode-projects/.
   // Append our "teacher of vibecoding" system prompt unless user explicitly
   // overrode it with their own --append-system-prompt or --system-prompt.
   const hasOwnSystemPrompt = passthroughArgs.some(a =>
@@ -141,6 +173,7 @@ export async function launchClaude(paths, hub /*, detection */) {
     const child = spawn(paths.claudeBin, passthroughArgs, {
       env: finalEnv,
       stdio: 'inherit',
+      cwd,
     });
 
     child.on('error', reject);

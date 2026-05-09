@@ -47,7 +47,9 @@ xattr -d com.apple.quarantine "$BIN_PATH" 2>/dev/null || true
 # не подключены) или сразу запустить вайбкодинг.
 cat > "$SHORTCUT" <<EOF
 #!/bin/bash
-cd "\$HOME"
+PROJECTS="\$HOME/krasavacode-projects"
+mkdir -p "\$PROJECTS"
+cd "\$PROJECTS"
 "$BIN_PATH"
 EOF
 chmod +x "$SHORTCUT"

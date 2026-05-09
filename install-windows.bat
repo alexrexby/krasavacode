@@ -37,9 +37,10 @@ if not exist "%BIN_PATH%" (
   exit /b 1
 )
 
-REM Create desktop shortcut
+REM Create desktop shortcut — opens claude in sandbox folder
 > "%SHORTCUT%" echo @echo off
->> "%SHORTCUT%" echo cd /d "%%USERPROFILE%%"
+>> "%SHORTCUT%" echo if not exist "%%USERPROFILE%%\krasavacode-projects" mkdir "%%USERPROFILE%%\krasavacode-projects"
+>> "%SHORTCUT%" echo cd /d "%%USERPROFILE%%\krasavacode-projects"
 >> "%SHORTCUT%" echo "%BIN_PATH%"
 >> "%SHORTCUT%" echo pause
 

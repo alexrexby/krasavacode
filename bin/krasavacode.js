@@ -6,16 +6,18 @@ import { launchClaude } from '../src/launch.js';
 import { runUpgrade } from '../src/upgrade.js';
 import { runDoctor } from '../src/doctor.js';
 import { runSetup } from '../src/setup.js';
+import { runReset } from '../src/reset.js';
 import { configuredProviders } from '../src/providers.js';
 
 // Hardcoded so it works inside Bun --compile (no FS access to package.json)
-const VERSION = '0.4.13';
+const VERSION = '0.5.1';
 
 const cmd = process.argv[2];
 
 async function main() {
   if (cmd === 'doctor') return runDoctor();
   if (cmd === 'upgrade') return runUpgrade();
+  if (cmd === 'reset') return runReset();
   if (cmd === '--version' || cmd === '-v') {
     console.log(`KRASAVACODE v${VERSION}`);
     return;

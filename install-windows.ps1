@@ -38,10 +38,11 @@ if (-not (Test-Path $binPath)) {
     exit 1
 }
 
-# Создаём ярлык-bat на рабочем столе
+# Создаём ярлык-bat на рабочем столе — открывает claude в sandbox-папке
 $shortcutContent = @"
 @echo off
-cd /d "%USERPROFILE%"
+if not exist "%USERPROFILE%\krasavacode-projects" mkdir "%USERPROFILE%\krasavacode-projects"
+cd /d "%USERPROFILE%\krasavacode-projects"
 "$binPath"
 pause
 "@

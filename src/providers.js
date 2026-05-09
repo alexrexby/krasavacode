@@ -19,6 +19,7 @@ export const KEYS_DIR = join(ROOT, 'keys');
 const ENV_VAR_NAMES = {
   cerebras: 'CEREBRAS_API_KEY',
   groq: 'GROQ_API_KEY',
+  openrouter: 'OPENROUTER_API_KEY',
   gemini: 'GEMINI_API_KEY',
 };
 
@@ -122,6 +123,56 @@ export const PROVIDERS = {
     defaultModel: 'openai/gpt-oss-120b',
   },
 
+  openrouter: {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    tagline: '50 запросов/день на 28 free-моделей (Kimi 2.5, DeepSeek V4, Qwen3-235B)',
+    consoleUrl: 'https://openrouter.ai/keys',
+    keyPattern: /^sk-or-v1-[a-f0-9]{64}$/,
+    keyExample: 'sk-or-v1-…',
+    keyHowto: [
+      'Войди через Google или GitHub — без карты',
+      'На странице ключей нажми «Create key» → введи название',
+      'Скопируй ключ (начинается с sk-or-v1-)',
+    ],
+    quota: '~50 запросов/день в сумме на все free-модели, 20 запросов/мин',
+    bestModel: 'Kimi K2.5 / DeepSeek V4 (через OpenRouter)',
+    rpd: 50,
+    tpd: null,
+    rpm: 20,
+    contextLimit: 200_000,
+    verify: async (key) => {
+      try {
+        const res = await fetch('https://openrouter.ai/api/v1/models', {
+          headers: { 'authorization': `Bearer ${key}` },
+          signal: AbortSignal.timeout(15000),
+        });
+        if (res.status === 401 || res.status === 403) {
+          return { ok: false, error: 'Ключ не принят. Проверь, что скопировал целиком.' };
+        }
+        if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+        const data = await res.json();
+        const n = data.data?.length || 0;
+        return { ok: true, text: `доступно моделей: ${n}` };
+      } catch (e) {
+        return { ok: false, error: 'Сеть не отвечает: ' + e.message };
+      }
+    },
+    ccrProvider: () => ({
+      name: 'openrouter',
+      api_base_url: 'https://openrouter.ai/api/v1/chat/completions',
+      api_key: '$OPENROUTER_API_KEY',
+      models: [
+        'moonshotai/kimi-k2:free',
+        'deepseek/deepseek-chat-v3-0324:free',
+        'qwen/qwen3-235b-a22b:free',
+        'meta-llama/llama-3.3-70b-instruct:free',
+      ],
+      transformer: { use: ['openrouter'] },
+    }),
+    defaultModel: 'moonshotai/kimi-k2:free',
+  },
+
   gemini: {
     id: 'gemini',
     name: 'Google Gemini',
@@ -170,7 +221,7 @@ export const PROVIDERS = {
   },
 };
 
-export const PROVIDER_PRIORITY = ['cerebras', 'groq', 'gemini'];
+export const PROVIDER_PRIORITY = ['cerebras', 'groq', 'openrouter', 'gemini'];
 
 export function pollinationsProvider() {
   return {

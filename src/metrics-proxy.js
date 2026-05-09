@@ -57,16 +57,29 @@ function getFreePort() {
   });
 }
 
+// Cerebras free tier has 8K context. Claude Code easily sends 30-50K-char
+// payloads (system prompt + open files + history + tool defs). If we naively
+// route every request to Cerebras first, most of them 400 → cooldown → switch
+// to Groq, wasting 1-2 seconds per request. Skip Cerebras preemptively when
+// the payload is too big.
+//
+// Rough estimate: 1 token ≈ 3-4 chars for mixed text. 8K tokens × 3 ≈ 24K chars.
+// We give a safety margin and skip at 22K chars.
+const CEREBRAS_PAYLOAD_LIMIT_CHARS = 22_000;
+
 /** Pick the first available provider not on cooldown, in priority order. */
-async function chooseProvider() {
+async function chooseProvider(payloadSize = 0) {
   const cd = await getCooldowns();
   const configured = await configuredProviders();
   const now = Date.now();
   const onCooldown = (id) => cd[id] && new Date(cd[id]).getTime() > now;
 
   for (const id of configured) {
-    if (!onCooldown(id)) return { id, model: PROVIDERS[id].defaultModel };
+    if (onCooldown(id)) continue;
+    if (id === 'cerebras' && payloadSize > CEREBRAS_PAYLOAD_LIMIT_CHARS) continue; // 8K context fix
+    return { id, model: PROVIDERS[id].defaultModel };
   }
+  // Try Pollinations next; if even Pollinations is on cooldown — null.
   // All custom providers exhausted — fall back to Pollinations
   if (!onCooldown('pollinations')) return { id: 'pollinations', model: 'openai' };
   return null;
@@ -194,7 +207,7 @@ export async function startMetricsProxy(upstreamBaseUrl) {
 
       // /v1/messages: provider selection with retry-on-429
       for (let attempt = 1; attempt <= 4; attempt++) {
-        const choice = await chooseProvider();
+        const choice = await chooseProvider(originalBody.length);
         if (!choice) {
           if (debug) console.error('[metrics] all providers on cooldown');
           res.writeHead(429, { 'Content-Type': 'application/json' });
