@@ -26,7 +26,7 @@ export const PROVIDERS = {
   cerebras: {
     id: 'cerebras',
     name: 'Cerebras',
-    tagline: '1M токенов/день, скорость 2600 ток/сек',
+    tagline: '14 400 запросов/день + 1M токенов/день, скорость 2600 ток/сек',
     consoleUrl: 'https://cloud.cerebras.ai/?utm_source=krasavacode',
     keyPattern: /^csk-[A-Za-z0-9]{20,}$/,
     keyExample: 'csk-…',
@@ -36,9 +36,9 @@ export const PROVIDERS = {
       'Нажми «Create API Key» → введи любое название',
       'Скопируй ключ (начинается с csk-)',
     ],
-    quota: '~1 000 000 токенов в день, 30 запросов/мин',
-    bestModel: 'Qwen 3 235B (Cerebras)',
-    rpd: null, // unlimited by RPD, only TPD-bound
+    quota: '14 400 запросов/день + 1M токенов/день, 30 запросов/мин',
+    bestModel: 'Qwen 3 235B',
+    rpd: 14_400,
     tpd: 1_000_000,
     rpm: 30,
     contextLimit: 8_000,
@@ -61,10 +61,12 @@ export const PROVIDERS = {
       }
     },
     ccrProvider: () => ({
+      // Free tier: qwen-3-235b, gpt-oss-120b, llama3.1-8b. Llama 3.3 70B
+      // больше не на free (deprecated/убран Cerebras в ~2025).
       name: 'cerebras',
       api_base_url: 'https://api.cerebras.ai/v1/chat/completions',
       api_key: '$CEREBRAS_API_KEY',
-      models: ['qwen-3-235b-a22b-instruct-2507', 'llama-3.3-70b', 'gpt-oss-120b'],
+      models: ['qwen-3-235b-a22b-instruct-2507', 'gpt-oss-120b', 'llama3.1-8b'],
     }),
     defaultModel: 'qwen-3-235b-a22b-instruct-2507',
   },
@@ -72,7 +74,7 @@ export const PROVIDERS = {
   groq: {
     id: 'groq',
     name: 'Groq',
-    tagline: '1000 запросов/день, Kimi K2 + DeepSeek-R1',
+    tagline: '1000 запросов/день, GPT-OSS 120B + DeepSeek-R1',
     consoleUrl: 'https://console.groq.com/keys',
     keyPattern: /^gsk_[A-Za-z0-9]{40,}$/,
     keyExample: 'gsk_…',
@@ -83,7 +85,7 @@ export const PROVIDERS = {
       'Скопируй ключ (начинается с gsk_)',
     ],
     quota: '~1 000 запросов в день, 30 запросов/мин',
-    bestModel: 'Kimi K2 (через Groq)',
+    bestModel: 'GPT-OSS 120B',
     rpd: 1000,
     tpd: null,
     rpm: 30,
@@ -106,23 +108,24 @@ export const PROVIDERS = {
       }
     },
     ccrProvider: () => ({
+      // moonshotai/kimi-k2-instruct deprecated by Groq in 2025-09 →
+      // kimi-k2-instruct-0905 deprecated 2026-03 → hosts pushes openai/gpt-oss-120b.
       name: 'groq',
       api_base_url: 'https://api.groq.com/openai/v1/chat/completions',
       api_key: '$GROQ_API_KEY',
       models: [
-        'moonshotai/kimi-k2-instruct',
+        'openai/gpt-oss-120b',
         'deepseek-r1-distill-llama-70b',
         'llama-3.3-70b-versatile',
-        'qwen/qwen3-32b',
       ],
     }),
-    defaultModel: 'moonshotai/kimi-k2-instruct',
+    defaultModel: 'openai/gpt-oss-120b',
   },
 
   gemini: {
     id: 'gemini',
     name: 'Google Gemini',
-    tagline: '250 запросов/день, Gemini 2.5 Flash',
+    tagline: '250–1500 запросов/день (Google рандомизирует), Gemini 2.5 Flash',
     consoleUrl: 'https://aistudio.google.com/apikey',
     keyPattern: /^AIza[A-Za-z0-9_-]{35}$/,
     keyExample: 'AIzaSy…',
@@ -132,9 +135,9 @@ export const PROVIDERS = {
       'Если попросит выбрать проект — оставь предложенный',
       'Скопируй ключ (начинается с AIza)',
     ],
-    quota: '~250 запросов в день, 10 запросов/мин',
+    quota: '250–1500 запросов в день (зависит от аккаунта), 10 запросов/мин',
     bestModel: 'Gemini 2.5 Flash',
-    rpd: 250,
+    rpd: 250, // лимит, который мы предполагаем для warning thresholds
     tpd: null,
     rpm: 10,
     contextLimit: 1_000_000,
