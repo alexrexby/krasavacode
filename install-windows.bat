@@ -1,29 +1,28 @@
 @echo off
-REM KRASAVACODE — установщик для Windows.
-REM Дабл-клик на этот файл — и всё установится само.
+REM KRASAVACODE - installer for Windows.
+REM Double-click this file - everything installs automatically.
 
 setlocal EnableDelayedExpansion
 chcp 65001 >nul 2>&1
 
 cls
 echo.
-echo   ╔══════════════════════════════════════════════╗
-echo   ║              KRASAVACODE                     ║
-echo   ║ Бесплатный вайбкодинг — установка для Win    ║
-echo   ╚══════════════════════════════════════════════╝
+echo   =============================================
+echo                K R A S A V A C O D E
+echo     Free vibecoding - install for Windows
+echo   =============================================
 echo.
 
 set "INSTALL_DIR=%USERPROFILE%\krasavacode"
 set "BIN_PATH=%INSTALL_DIR%\krasavacode.exe"
-set "SHORTCUT=%USERPROFILE%\Desktop\ВАЙБКОДИНГ.bat"
+set "SHORTCUT=%USERPROFILE%\Desktop\VIBECODE.bat"
 set "URL=https://github.com/alexrexby/krasavacode/releases/latest/download/krasavacode.exe"
 
 if not exist "%INSTALL_DIR%" mkdir "%INSTALL_DIR%"
 
-echo   📥 Скачиваю программу (≈110 МБ, около минуты)...
+echo   Downloading (~110 MB, about a minute)...
 echo.
 
-REM Используем curl (есть в Win10+) либо PowerShell как fallback
 where curl >nul 2>&1
 if %ERRORLEVEL% EQU 0 (
   curl --fail --location --progress-bar -o "%BIN_PATH%" "%URL%"
@@ -33,32 +32,30 @@ if %ERRORLEVEL% EQU 0 (
 
 if not exist "%BIN_PATH%" (
   echo.
-  echo   ❌ Не удалось скачать. Проверь интернет и попробуй ещё раз.
+  echo   X Download failed. Check internet and try again.
   pause
   exit /b 1
 )
 
-REM Создаём ярлык на рабочем столе
+REM Create desktop shortcut
 > "%SHORTCUT%" echo @echo off
 >> "%SHORTCUT%" echo cd /d "%%USERPROFILE%%"
 >> "%SHORTCUT%" echo "%BIN_PATH%"
 >> "%SHORTCUT%" echo pause
 
 echo.
-echo   ✅ Готово!
+echo   + Done!
 echo.
-echo   На твоём Рабочем столе появился значок «ВАЙБКОДИНГ».
+echo   Desktop shortcut "VIBECODE" was created.
 echo.
-echo   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-echo   СЛЕДУЮЩИЙ ШАГ — подключаем бесплатные ИИ
-echo   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+echo   =============================================
+echo   NEXT STEP - connect free AI providers
+echo   =============================================
 echo.
-echo   По умолчанию работает простая модель.
-echo   Подключи Cerebras (14k запросов/день) — это главное.
-echo   Можно ещё Groq и Gemini для надёжности.
-echo   Всё бесплатно, без карты, занимает ~1 минуту.
+echo   Default model is weak. Connect Cerebras (14k req/day) -
+echo   that is the main one. Groq and Gemini optional.
+echo   All free, no card, takes about 1 minute.
 echo.
-echo   Сейчас откроется окно подключения в браузере.
-echo   Нажми любую клавишу для продолжения.
+echo   Press any key to open the connection window in browser.
 pause >nul
 "%BIN_PATH%" setup
