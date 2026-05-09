@@ -1,8 +1,11 @@
 import { spawn } from 'node:child_process';
+import { isGeminiConfigured } from './setup-gemini.js';
 
 const PLACEHOLDER_TOKEN = 'sk-krasavacode-local';
 
 export async function launchClaude(paths, hub /*, detection */) {
+  const geminiOn = await isGeminiConfigured();
+
   const env = {
     ...process.env,
     ANTHROPIC_BASE_URL: hub.baseUrl,
@@ -21,7 +24,12 @@ export async function launchClaude(paths, hub /*, detection */) {
   console.log('');
   console.log('━'.repeat(58));
   console.log('  KRASAVACODE — вайбкодинг через локальный hub');
-  console.log('  Hub: ' + hub.baseUrl + '  (claude-code-router → Pollinations)');
+  if (geminiOn) {
+    console.log('  Модель: Google Gemini 2.5 Flash  (1500 запросов в день)');
+  } else {
+    console.log('  Модель: gpt-oss-20b через Pollinations  (бесплатно, без логина)');
+    console.log('  💡 Хочешь модель посильнее бесплатно? → krasavacode setup-gemini');
+  }
   console.log('  Пиши задачу обычным языком, ИИ сделает.');
   console.log('━'.repeat(58));
   console.log('');
