@@ -21,6 +21,7 @@ const ENV_VAR_NAMES = {
   groq: 'GROQ_API_KEY',
   openrouter: 'OPENROUTER_API_KEY',
   gemini: 'GEMINI_API_KEY',
+  nvidia: 'NVIDIA_API_KEY',
 };
 
 export const PROVIDERS = {
@@ -173,6 +174,55 @@ export const PROVIDERS = {
     defaultModel: 'meta-llama/llama-3.3-70b-instruct:free',
   },
 
+  nvidia: {
+    id: 'nvidia',
+    name: 'NVIDIA NIM',
+    tagline: '1000 кредитов на старте, топовые coding-модели (Qwen Coder, Llama 70B)',
+    consoleUrl: 'https://build.nvidia.com/settings/api-keys',
+    keyPattern: /^nvapi-[A-Za-z0-9_-]{40,}$/,
+    keyExample: 'nvapi-…',
+    keyHowto: [
+      'Войди через Google или зарегистрируйся как NVIDIA Developer (бесплатно)',
+      'На странице ключей нажми «Generate Key»',
+      'Можешь привязать к любому проекту (или создать новый)',
+      'Скопируй ключ (начинается с nvapi-)',
+    ],
+    quota: '~1 000 кредитов на старте, можно запросить до 5 000 (через форму)',
+    bestModel: 'Qwen 2.5 Coder 32B / Llama 3.3 70B',
+    rpd: null,
+    tpd: null,
+    rpm: 40,
+    contextLimit: 128_000,
+    verify: async (key) => {
+      try {
+        const res = await fetch('https://integrate.api.nvidia.com/v1/models', {
+          headers: { 'authorization': `Bearer ${key}` },
+          signal: AbortSignal.timeout(15000),
+        });
+        if (res.status === 401 || res.status === 403) {
+          return { ok: false, error: 'Ключ не принят. Проверь, что скопировал целиком.' };
+        }
+        if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+        const data = await res.json();
+        const n = data.data?.length || 0;
+        return { ok: true, text: `доступно моделей: ${n}` };
+      } catch (e) {
+        return { ok: false, error: 'Сеть не отвечает: ' + e.message };
+      }
+    },
+    ccrProvider: () => ({
+      name: 'nvidia',
+      api_base_url: 'https://integrate.api.nvidia.com/v1/chat/completions',
+      api_key: '$NVIDIA_API_KEY',
+      models: [
+        'qwen/qwen2.5-coder-32b-instruct',
+        'meta/llama-3.3-70b-instruct',
+        'deepseek-ai/deepseek-r1',
+      ],
+    }),
+    defaultModel: 'qwen/qwen2.5-coder-32b-instruct',
+  },
+
   gemini: {
     id: 'gemini',
     name: 'Google Gemini',
@@ -221,12 +271,12 @@ export const PROVIDERS = {
   },
 };
 
-// Cerebras free тариф: 14400 RPD + 1M TPD = самый щедрый, но strict-mode
-// OpenAI implementation отвергает Anthropic-style content (cache_control,
-// content как массив text-блоков, reasoning). На большинстве запросов Claude
-// Code получает 400. Поэтому Cerebras в конце chain — fallback, когда всё
-// остальное на cooldown.
-export const PROVIDER_PRIORITY = ['groq', 'openrouter', 'gemini', 'cerebras'];
+// Цепочка провайдеров. Первый = дефолт, далее fallback при cooldown/ошибках.
+// - groq, openrouter, gemini, nvidia — нормальные OpenAI-compatible, работают
+// - cerebras в самом конце т.к. strict-mode 400 на Anthropic payload (Claude
+//   Code-style cache_control, content как массив text-блоков), реально
+//   срабатывает только на простых запросах
+export const PROVIDER_PRIORITY = ['groq', 'openrouter', 'gemini', 'nvidia', 'cerebras'];
 
 export function pollinationsProvider() {
   return {
