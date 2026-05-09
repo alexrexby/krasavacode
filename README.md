@@ -86,11 +86,24 @@ iwr https://is.gd/tOzD8g -useb | iex
 
 ## 🐧 Linux
 
+### Простой способ — одна команда
+
 ```bash
-curl -L https://github.com/alexrexby/krasavacode/releases/latest/download/krasavacode-linux-x64 -o ~/krasavacode
-chmod +x ~/krasavacode
-~/krasavacode
+curl -fsSL https://is.gd/tWmkij | bash
 ```
+
+Скрипт скачает бинарник в `~/.local/bin/krasavacode`, создаст папку `~/krasavacode-projects/` и сразу запустит мастер подключения провайдеров.
+
+**Если Ubuntu Server без GUI:** установка та же, но мастер откроется в текстовом режиме (без браузера) — отвечай на вопросы прямо в терминале.
+
+**Если WSL2 (Ubuntu в Windows):** работает как Linux Desktop, мастер откроется в Windows-браузере через `wslview`.
+
+### Альтернатива — вручную через npm
+
+```bash
+npx krasavacode
+```
+Нужен Node.js 20+; если меньше — CLI сам подтянет нужный.
 
 ---
 

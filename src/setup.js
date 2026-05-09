@@ -20,14 +20,37 @@ const ROOT = join(homedir(), '.krasavacode');
 const STATE_FILE = join(ROOT, 'state.json');
 
 function openBrowser(url) {
-  const cmd = platform() === 'darwin' ? 'open'
-    : platform() === 'win32' ? 'start'
-    : 'xdg-open';
-  const args = platform() === 'win32' ? ['', url] : [url];
-  try {
-    spawn(cmd, args, { detached: true, stdio: 'ignore', shell: platform() === 'win32' }).unref();
-    return true;
-  } catch { return false; }
+  if (platform() === 'darwin') {
+    try { spawn('open', [url], { detached: true, stdio: 'ignore' }).unref(); return true; }
+    catch { return false; }
+  }
+  if (platform() === 'win32') {
+    try { spawn('start', ['', url], { detached: true, stdio: 'ignore', shell: true }).unref(); return true; }
+    catch { return false; }
+  }
+  // Linux / WSL — try multiple openers in priority order.
+  // wslview: WSL native opener (uses Windows browser)
+  // xdg-open: standard Linux desktop
+  // sensible-browser: Debian/Ubuntu fallback
+  // gio: GNOME-native
+  for (const opener of ['wslview', 'xdg-open', 'sensible-browser', 'gio']) {
+    try {
+      const args = opener === 'gio' ? ['open', url] : [url];
+      const p = spawn(opener, args, { detached: true, stdio: 'ignore' });
+      p.on('error', () => {}); // swallow ENOENT
+      p.unref();
+      return true;
+    } catch {}
+  }
+  return false;
+}
+
+function isHeadlessLinux() {
+  if (platform() !== 'linux') return false;
+  // WSL2 always has WSL_DISTRO_NAME and routes to Windows browser
+  if (process.env.WSL_DISTRO_NAME) return false;
+  // Real Linux without graphical session
+  return !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY;
 }
 
 async function readState() { try { return JSON.parse(await readFile(STATE_FILE, 'utf8')); } catch { return {}; } }
@@ -510,7 +533,13 @@ async function cliOnboarding() {
 }
 
 export async function runSetup() {
-  const useBrowser = process.env.KRASAVACODE_NO_BROWSER !== '1' && process.stdout.isTTY !== false;
+  const headless = isHeadlessLinux();
+  if (headless) {
+    console.log('  (Linux без GUI — открываю текстовый мастер)');
+  }
+  const useBrowser = !headless
+    && process.env.KRASAVACODE_NO_BROWSER !== '1'
+    && process.stdout.isTTY !== false;
   if (useBrowser) {
     try { return await browserOnboarding(); }
     catch (e) {
