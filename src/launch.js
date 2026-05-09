@@ -3,6 +3,7 @@ import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { isGeminiConfigured } from './setup-gemini.js';
+import { getQuotaInfo } from './metrics-proxy.js';
 
 const PLACEHOLDER_TOKEN = 'sk-krasavacode-local';
 const CLAUDE_CONFIG_DIR = join(homedir(), '.krasavacode', 'claude-config');
@@ -44,6 +45,7 @@ export async function launchClaude(paths, hub /*, detection */) {
     const pad = Math.max(0, W - 2 - [...txt].length);
     return '┃ ' + txt + ' '.repeat(pad) + '┃';
   };
+  const quota = await getQuotaInfo();
   console.log('');
   console.log('┏' + '━'.repeat(W - 1) + '┓');
   console.log(line('  K R A S A V A C O D E'));
@@ -51,10 +53,19 @@ export async function launchClaude(paths, hub /*, detection */) {
   console.log('┣' + '━'.repeat(W - 1) + '┫');
   if (geminiOn) {
     console.log(line('  ✓ Модель: Google Gemini 2.5 Flash'));
-    console.log(line('    (1500 запросов в день, бесплатно)'));
+    const left = quota.perDay - quota.used;
+    if (left > 100) {
+      console.log(line(`    Сегодня осталось: ${left} из ${quota.perDay} запросов`));
+    } else if (left > 0) {
+      console.log(line(`  ⚠️  Осталось ${left} из ${quota.perDay} — обнулится завтра`));
+    } else {
+      console.log(line(`  ❌ Лимит на сегодня исчерпан (${quota.used} из ${quota.perDay})`));
+      console.log(line(`     Обнулится в ~21:00 МСК`));
+    }
   } else {
     console.log(line('  · Модель: gpt-oss-20b через Pollinations'));
     console.log(line('    (бесплатно, без логина)'));
+    console.log(line(`    Сегодня сделал ${quota.used} запросов`));
     console.log(line('  💡 Лучше модель: krasavacode setup-gemini'));
   }
   console.log('┗' + '━'.repeat(W - 1) + '┛');

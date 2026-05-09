@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { CCR_PORT } from './preset.js';
 import { loadGeminiKey } from './setup-gemini.js';
+import { startMetricsProxy } from './metrics-proxy.js';
 
 const HOST = '127.0.0.1';
 const PORT = CCR_PORT;
@@ -88,11 +89,24 @@ export async function startHub(paths) {
     }
   }
 
-  return { process: child, port: PORT, baseUrl, ownedByUs: true };
+  // Front the ccr endpoint with our metrics-counting proxy. Claude Code
+  // talks to the proxy; the proxy forwards to ccr; we count requests and
+  // translate 429 errors into friendly Russian messages.
+  const metrics = await startMetricsProxy(baseUrl);
+
+  return {
+    process: child,
+    port: PORT,
+    ccrBaseUrl: baseUrl,
+    baseUrl: metrics.baseUrl, // <-- Claude Code будет ходить сюда
+    metrics,
+    ownedByUs: true,
+  };
 }
 
 export async function stopHub(hub) {
   if (!hub) return;
+  if (hub.metrics) await hub.metrics.stop().catch(() => {});
   if (!hub.ownedByUs) return; // we didn't start it; leave it running for the user
   if (!hub.process || hub.process.killed) return;
 
