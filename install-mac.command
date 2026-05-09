@@ -1,9 +1,13 @@
 #!/bin/bash
 # KRASAVACODE — установщик для macOS.
-# Дабл-клик на этот файл — и всё установится само.
+# Можно запускать двумя способами:
+#   1. Дабл-клик на скачанный файл (требует разрешить через System Settings → Privacy)
+#   2. curl -fsSL <url> | bash       (работает мгновенно, без Gatekeeper'а)
 set -e
 
-clear
+# Не выводим ANSI-clear если запущены через pipe (curl|bash)
+if [ -t 1 ]; then clear; fi
+
 echo ""
 echo "  ╔══════════════════════════════════════════════╗"
 echo "  ║              KRASAVACODE                     ║"
@@ -56,6 +60,11 @@ echo ""
 echo "  При первом запуске докачается ещё ≈100 МБ (Node.js и Claude Code),"
 echo "  это один раз. Дальше — мгновенно."
 echo ""
-echo "  Запустить прямо сейчас? [Enter — да, Ctrl+C — позже]"
-read -r
-exec "$BIN_PATH"
+# Если есть TTY — спросим, запускать ли. Если нет (curl|bash) — выходим.
+if [ -t 0 ]; then
+  echo "  Запустить прямо сейчас? [Enter — да, Ctrl+C — позже]"
+  read -r
+  exec "$BIN_PATH"
+else
+  echo "  Установка завершена. Дабл-клик на «ВАЙБКОДИНГ» на Рабочем столе — и поехали."
+fi
