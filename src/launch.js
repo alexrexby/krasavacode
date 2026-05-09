@@ -64,14 +64,16 @@ export async function launchClaude(paths, hub /*, detection */) {
   if (geminiOn) {
     console.log(line('  ✓ Модель: Google Gemini 2.5 Flash'));
     const left = quota.perDay - quota.used;
-    if (left > 100) {
+    const warn = Math.floor(quota.perDay / 5); // 20%
+    if (left > warn) {
       console.log(line(`    Сегодня осталось: ${left} из ${quota.perDay} запросов`));
     } else if (left > 0) {
-      console.log(line(`  ⚠️  Осталось ${left} из ${quota.perDay} — обнулится завтра`));
+      console.log(line(`  ⚠️  Осталось ${left} из ${quota.perDay} — обнулится в ~11:00 МСК`));
     } else {
       console.log(line(`  ❌ Лимит на сегодня исчерпан (${quota.used} из ${quota.perDay})`));
-      console.log(line(`     Обнулится в ~21:00 МСК`));
+      console.log(line(`     Обнулится в ~11:00 МСК. krasavacode setup-gemini`));
     }
+    console.log(line('    1 твой вопрос ≈ 3–10 запросов (Claude использует tools)'));
   } else {
     console.log(line('  · Модель: gpt-oss-20b через Pollinations'));
     console.log(line('    (бесплатно, без логина)'));

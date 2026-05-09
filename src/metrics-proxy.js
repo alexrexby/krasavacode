@@ -8,8 +8,10 @@ import { isGeminiConfigured } from './setup-gemini.js';
 const ROOT = join(homedir(), '.krasavacode');
 const USAGE_FILE = join(ROOT, 'usage.json');
 
+// Google free tier (2026): https://ai.google.dev/gemini-api/docs/rate-limits
+//   Gemini 2.5 Flash free: 10 RPM, 250k TPM, 250 RPD (request-per-day).
 const FREE_QUOTA = {
-  gemini: { perDay: 1500, label: 'Google Gemini 2.5 Flash (free tier)' },
+  gemini: { perDay: 250, rpm: 10, label: 'Google Gemini 2.5 Flash (free tier)' },
   pollinations: { perDay: null, label: 'Pollinations (free)' },
 };
 
@@ -66,22 +68,60 @@ function getFreePort() {
   });
 }
 
-const FRIENDLY_429 = (provider, used) => ({
-  type: 'error',
-  error: {
-    type: 'rate_limit_error',
-    message:
-      provider === 'gemini'
-        ? `Закончились бесплатные запросы Google Gemini на сегодня (использовано ${used} из 1500).\n\n` +
-          `Квота обнулится в ~10:00 PT (~21:00 МСК).\n\n` +
-          `Что делать сейчас:\n` +
-          `  • Подожди до завтра, и продолжи\n` +
-          `  • Или подключи второй Google-аккаунт через krasavacode setup-gemini\n` +
-          `  • Или временно вернись на Pollinations: удали ~/.krasavacode/gemini.env`
-        : `Pollinations на минуту перегружен. Подожди ~30 секунд и нажми Enter ещё раз.\n` +
-          `Или подключи Gemini для стабильности: krasavacode setup-gemini`,
-  },
-});
+function formatGeminiQuotaReason(upstreamBody) {
+  // Google's 429 body looks like:
+  //   { "error": { "code": 429, "message": "...",
+  //     "details": [{"@type": ".../QuotaFailure",
+  //                  "violations": [{"quotaMetric":"...generate_content_free_tier_requests",
+  //                                  "quotaId":"...PerDay..."}]}] }}
+  try {
+    const parsed = JSON.parse(upstreamBody);
+    const violations = parsed.error?.details?.find(d => d['@type']?.includes('QuotaFailure'))?.violations || [];
+    if (violations.length === 0) return null;
+
+    const v = violations[0];
+    const id = v.quotaId || v.quotaMetric || '';
+    const isPerMinute = /PerMinute/i.test(id);
+    const isPerDay = /PerDay/i.test(id);
+    const isTokens = /Token|input_token|output_token/i.test(id);
+
+    if (isPerMinute) return 'Слишком много запросов в минуту (лимит — 10 запросов/мин). Подожди 30–60 секунд и продолжай.';
+    if (isPerDay && isTokens) return 'Закончился дневной лимит входных токенов Gemini (≈250k/день).';
+    if (isPerDay) return 'Закончилась дневная квота запросов к Gemini (≈250 запросов/день для 2.5-flash).';
+    return `Google Gemini ограничил запрос: ${id}`;
+  } catch { return null; }
+}
+
+const FRIENDLY_429 = (provider, used, upstreamBody) => {
+  if (provider === 'gemini') {
+    const reason = formatGeminiQuotaReason(upstreamBody) ||
+      `Google ограничил запрос (использовано ${used} запросов сегодня через нас).`;
+    return {
+      type: 'error',
+      error: {
+        type: 'rate_limit_error',
+        message:
+          `${reason}\n\n` +
+          `Квоты обнуляются в полночь по тихоокеанскому времени (≈11:00 МСК).\n` +
+          `На один твой вопрос Claude Code делает 3–10 запросов (читает файлы, использует инструменты),\n` +
+          `поэтому реальный счёт у Google быстрее, чем в нашем счётчике.\n\n` +
+          `Что делать:\n` +
+          `  • Подожди минуту (если упёрлись в RPM) или до завтра (если в дневной)\n` +
+          `  • Подключи второй Google-аккаунт: krasavacode setup-gemini\n` +
+          `  • Временно вернись на Pollinations (без квот): удали ~/.krasavacode/gemini.env`,
+      },
+    };
+  }
+  return {
+    type: 'error',
+    error: {
+      type: 'rate_limit_error',
+      message:
+        `Pollinations на минуту перегружен. Подожди ~30 секунд и попробуй ещё раз.\n` +
+        `Или подключи Gemini: krasavacode setup-gemini`,
+    },
+  };
+};
 
 /**
  * Proxy: Claude Code → metrics-proxy (this) → ccr → upstream.
@@ -113,18 +153,23 @@ export async function startMetricsProxy(upstreamBaseUrl) {
         bump().catch(e => debug && console.error('[metrics] bump fail', e));
       }
 
-      // 429: try to replace body with a friendly message (non-streaming).
-      // If body is streaming/SSE we still let it through — Claude Code shows it.
+      // 429: replace body with a friendly Russian message that includes
+      // a parsed reason from Google's QuotaFailure details.
       if (upRes.statusCode === 429 && !/text\/event-stream/.test(upRes.headers['content-type'] || '')) {
         const used = await getTodayUsage();
         const provider = (await isGeminiConfigured()) ? 'gemini' : 'pollinations';
-        const body = JSON.stringify(FRIENDLY_429(provider, used));
-        const headers = { ...upRes.headers, 'content-type': 'application/json' };
-        delete headers['content-length'];
-        delete headers['content-encoding'];
-        res.writeHead(429, headers);
-        upRes.resume(); // drain the original
-        res.end(body);
+        const chunks = [];
+        upRes.on('data', d => chunks.push(d));
+        upRes.on('end', () => {
+          const upstreamBody = Buffer.concat(chunks).toString('utf8');
+          if (debug) console.error('[metrics] 429 upstream body:', upstreamBody.slice(0, 500));
+          const friendly = JSON.stringify(FRIENDLY_429(provider, used, upstreamBody));
+          const headers = { ...upRes.headers, 'content-type': 'application/json' };
+          delete headers['content-length'];
+          delete headers['content-encoding'];
+          res.writeHead(429, headers);
+          res.end(friendly);
+        });
         return;
       }
 
