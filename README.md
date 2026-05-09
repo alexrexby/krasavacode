@@ -8,7 +8,7 @@
 
 **Шаг 1.** Скачай файл-установщик:
 
-➡️ **[install-mac.command](https://github.com/alexrexby/krasavacode/raw/main/install-mac.command)**
+➡️ **[install-mac.command](https://github.com/alexrexby/krasavacode/releases/latest/download/install-mac.command)**
 
 (нажмёшь — он сразу скачается в папку «Загрузки»)
 
@@ -28,7 +28,7 @@
 
 **Шаг 1.** Скачай файл-установщик:
 
-➡️ **[install-windows.bat](https://github.com/alexrexby/krasavacode/raw/main/install-windows.bat)**
+➡️ **[install-windows.bat](https://github.com/alexrexby/krasavacode/releases/latest/download/install-windows.bat)**
 
 (нажмёшь — он сразу скачается в папку «Загрузки». Если Edge спросит «оставить или отменить», нажми **«Сохранить»**)
 

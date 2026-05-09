@@ -44,10 +44,17 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
+      - name: Include installer scripts in the Release
+        # GitHub raw URLs render text files in-browser; Releases always serve
+        # them with Content-Disposition: attachment, so click → download.
+        run: |
+          cp install-mac.command dist/
+          cp install-windows.bat dist/
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
