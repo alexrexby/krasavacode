@@ -500,36 +500,60 @@ function prompt(q) {
 
 async function cliOnboarding() {
   console.log('\n  Браузерный режим недоступен — запускаю текстовый.\n');
-  console.log('  Доступные провайдеры:');
-  for (const id of PROVIDER_PRIORITY) {
-    const p = PROVIDERS[id];
-    const have = await isProviderConfigured(id) ? '✓' : ' ';
-    console.log(`    [${have}] ${p.name} — ${p.tagline}`);
+
+  // Allow connecting multiple providers in one session before launching.
+  while (true) {
+    console.log('  Доступные провайдеры:');
+    for (const id of PROVIDER_PRIORITY) {
+      const p = PROVIDERS[id];
+      const have = await isProviderConfigured(id) ? '✓' : ' ';
+      console.log(`    [${have}] ${id.padEnd(12)} — ${p.tagline}`);
+    }
+    console.log('');
+
+    const choice = (await prompt(`  Какой подключить? (${PROVIDER_PRIORITY.join(' / ')}, или 'done' / Enter если хватит): `)).trim().toLowerCase();
+    if (!choice || choice === 'done' || choice === 'd' || choice === 'готово') break;
+
+    const def = PROVIDERS[choice];
+    if (!def) {
+      console.log(`  Не понял "${choice}". Доступны: ${PROVIDER_PRIORITY.join(', ')}\n`);
+      continue;
+    }
+
+    console.log(`\n  📋 Шаги для ${def.name}:`);
+    console.log(`     URL: ${def.consoleUrl}`);
+    for (const s of def.keyHowto) console.log(`     • ${s}`);
+
+    let key, ok = false;
+    for (let i = 0; i < 3; i++) {
+      key = (await prompt(`\n  Вставь ключ ${def.name} (или 'skip' чтобы пропустить): `)).trim();
+      if (key === 'skip' || key === '') { break; }
+      if (!def.keyPattern.test(key)) {
+        console.log(`  ⚠️  Не похоже на ключ. Ожидается: ${def.keyExample}`);
+        continue;
+      }
+      console.log('  ⏳ Проверяю…');
+      const r = await def.verify(key);
+      if (!r.ok) {
+        console.log(`  ❌ ${r.error}`);
+        continue;
+      }
+      await persistKey(choice, key);
+      console.log('  ✅ Подключено.\n');
+      ok = true;
+      break;
+    }
+    if (!ok && key !== 'skip') console.log('  Перехожу к следующему провайдеру.\n');
   }
-  console.log('');
-  const which = (await prompt('  Какой настроить? (cerebras / groq / gemini): ')).trim().toLowerCase();
-  const def = PROVIDERS[which];
-  if (!def) { console.log('  Неизвестный провайдер.'); return { launchAfter: false }; }
 
-  console.log(`\n  Открой: ${def.consoleUrl}`);
-  for (const s of def.keyHowto) console.log(`    • ${s}`);
-
-  let key;
-  for (let i = 0; i < 3; i++) {
-    key = (await prompt(`\n  Вставь ключ ${def.name}: `)).trim();
-    if (def.keyPattern.test(key)) break;
-    console.log(`  ⚠️  Не похоже на ключ. Ожидается: ${def.keyExample}\n`);
+  const have = await configuredProviders();
+  if (have.length === 0) {
+    console.log('\n  Ни одного провайдера не подключено — будет работать слабый Pollinations.');
+    console.log('  Можно запустить мастер позже: krasavacode setup\n');
   }
-  if (!def.keyPattern.test(key)) return { launchAfter: false };
-
-  console.log('  ⏳ Проверяю…');
-  const r = await def.verify(key);
-  if (!r.ok) { console.log(`  ❌ ${r.error}`); return { launchAfter: false }; }
-  await persistKey(which, key);
-  console.log('  ✅ Подключено.\n');
 
   const launch = (await prompt('  Запустить вайбкодинг сейчас? [Enter — да, n — позже]: ')).trim().toLowerCase();
-  return { launchAfter: ['', 'y', 'yes', 'д', 'да'].includes(launch) };
+  return { launchAfter: ['', 'y', 'yes', 'д', 'да'].includes(launch), configured: have };
 }
 
 export async function runSetup() {
