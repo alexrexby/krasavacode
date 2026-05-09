@@ -8,7 +8,7 @@ import { runDoctor } from '../src/doctor.js';
 import { runSetupGemini } from '../src/setup-gemini.js';
 
 // Hardcoded so it works inside Bun --compile (no FS access to package.json)
-const VERSION = '0.3.1';
+const VERSION = '0.3.2';
 
 const cmd = process.argv[2];
 
