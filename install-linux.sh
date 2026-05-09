@@ -40,7 +40,14 @@ mkdir -p "$INSTALL_DIR"
 mkdir -p "$PROJECTS"
 
 echo "  📥 Скачиваю программу (≈100 МБ)…"
-curl -fL --progress-bar -o "$BIN_PATH" "$URL"
+if curl -fL --progress-bar -o "$BIN_PATH" "$URL"; then
+  echo "  ✓ Скачано: $(du -h "$BIN_PATH" | cut -f1)"
+else
+  echo ""
+  echo "  ✗ Не удалось скачать. Проверь интернет."
+  echo "    URL: $URL"
+  exit 1
+fi
 chmod +x "$BIN_PATH"
 
 # Проверяем что ~/.local/bin в PATH

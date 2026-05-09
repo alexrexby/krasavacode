@@ -38,7 +38,9 @@ function pickDistribution() {
   } else if (p === 'linux') {
     nodePlatform = 'linux';
     nodeArch = a === 'arm64' ? 'arm64' : 'x64';
-    ext = 'tar.xz';
+    // Use .tar.gz instead of .tar.xz so we don't need xz-utils on minimal
+    // server installs (Ubuntu Server 24 minimal etc don't ship it).
+    ext = 'tar.gz';
   } else if (p === 'win32') {
     nodePlatform = 'win';
     nodeArch = 'x64';

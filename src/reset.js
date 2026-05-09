@@ -25,6 +25,10 @@ const TARGETS = [
   { path: join(ROOT, 'gemini.env'), label: 'старый ключ Gemini (legacy путь)' },
   { path: join(CCR_DIR, 'config.json'), label: 'конфиг claude-code-router' },
   { path: join(ROOT, 'claude-config'), label: 'изолированные настройки Claude Code' },
+  // Claude Code v2.1+ создаёт эти пути в обход ANTHROPIC_CONFIG_DIR.
+  // Чистим тоже, иначе остаётся история сессий и projects-state.
+  { path: join(homedir(), '.claude'), label: 'остатки Claude Code в ~/.claude/' },
+  { path: join(homedir(), '.claude.json'), label: '~/.claude.json (project-state Claude Code)' },
 ];
 
 const KEEP = [
