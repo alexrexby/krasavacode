@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { configuredProviders, PROVIDERS, PROVIDER_PRIORITY } from './providers.js';
 import { setCooldown, getCooldowns, cooldownUntil } from './cooldowns.js';
+import { compressPayload } from './compression.js';
 
 const ROOT = join(homedir(), '.krasavacode');
 const USAGE_FILE = join(ROOT, 'usage.json');
@@ -154,11 +155,16 @@ function cleanForCerebras(parsed) {
   }
 }
 
-function rewriteBodyWithProvider(originalBody, providerId, modelName) {
+function rewriteBodyWithProvider(originalBody, providerId, modelName, debug = false) {
   try {
     const parsed = JSON.parse(originalBody);
     parsed.model = `${providerId},${modelName}`;
     if (providerId === 'cerebras') cleanForCerebras(parsed);
+    const stats = compressPayload(parsed);
+    if (debug && stats.saved > 0) {
+      const pct = ((stats.saved / stats.before) * 100).toFixed(1);
+      console.error(`[compress] ${providerId}: -${stats.saved}b (${pct}%) — ${stats.before}→${stats.after}`);
+    }
     return Buffer.from(JSON.stringify(parsed));
   } catch {
     return originalBody;
@@ -243,7 +249,7 @@ export async function startMetricsProxy(upstreamBaseUrl) {
           return;
         }
 
-        const rewrittenBody = rewriteBodyWithProvider(originalBody, choice.id, choice.model);
+        const rewrittenBody = rewriteBodyWithProvider(originalBody, choice.id, choice.model, debug);
         if (debug) console.error(`[metrics] attempt ${attempt}: routing to ${choice.id},${choice.model}`);
 
         let upRes;
