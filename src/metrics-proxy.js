@@ -192,7 +192,25 @@ export async function startMetricsProxy(upstreamBaseUrl) {
   const server = http.createServer(async (req, res) => {
     const path = (req.url || '').split('?')[0];
     const isMessages = req.method === 'POST' && path === '/v1/messages';
+    const isModelList = req.method === 'GET' && path === '/v1/models';
     if (debug) console.error(`[metrics] ${req.method} ${req.url}`);
+
+    // Claude Code v2.1+ asks GET /v1/models BEFORE sending any request,
+    // and refuses models that aren't in the response. Our upstream (ccr → Pollinations)
+    // returns "openai-fast" etc — no Claude models. Fake the list ourselves.
+    if (isModelList) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({
+        data: [
+          { id: 'claude-sonnet-4-7', type: 'model', display_name: 'Claude Sonnet 4.7' },
+          { id: 'claude-sonnet-4-6', type: 'model', display_name: 'Claude Sonnet 4.6' },
+          { id: 'claude-sonnet-4-5', type: 'model', display_name: 'Claude Sonnet 4.5' },
+          { id: 'claude-opus-4-7', type: 'model', display_name: 'Claude Opus 4.7' },
+          { id: 'claude-haiku-4-5', type: 'model', display_name: 'Claude Haiku 4.5' },
+        ],
+        has_more: false,
+      }));
+    }
 
     const chunks = [];
     req.on('data', d => chunks.push(d));
