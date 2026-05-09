@@ -162,15 +162,16 @@ export const PROVIDERS = {
       name: 'openrouter',
       api_base_url: 'https://openrouter.ai/api/v1/chat/completions',
       api_key: '$OPENROUTER_API_KEY',
+      // OpenRouter постоянно переименовывает модели. Эти три проверены
+      // на май 2026; первая в порядке = defaultModel ниже.
       models: [
-        'moonshotai/kimi-k2:free',
         'deepseek/deepseek-chat-v3-0324:free',
-        'qwen/qwen3-235b-a22b:free',
         'meta-llama/llama-3.3-70b-instruct:free',
+        'qwen/qwen3-235b-a22b:free',
       ],
       transformer: { use: ['openrouter'] },
     }),
-    defaultModel: 'moonshotai/kimi-k2:free',
+    defaultModel: 'deepseek/deepseek-chat-v3-0324:free',
   },
 
   gemini: {

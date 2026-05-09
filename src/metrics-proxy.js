@@ -262,10 +262,13 @@ export async function startMetricsProxy(upstreamBaseUrl) {
         //   400 — payload incompatible (cache_control etc)
         //   401 — invalid/expired key
         //   403 — billing block / disabled
+        //   404 — model name not on this provider (e.g. OpenRouter renamed)
         //   429 — rate limit / quota
+        //   5xx — provider transient errors
         // Other non-2xx → pass through to client.
         const code = upRes.statusCode;
-        const isRetryable = code === 400 || code === 401 || code === 403 || code === 429;
+        const isRetryable = code === 400 || code === 401 || code === 403
+          || code === 404 || code === 429 || (code >= 500 && code < 600);
         if (!isRetryable) {
           if (upRes.statusCode >= 200 && upRes.statusCode < 300) {
             bump(choice.id).catch(() => {});
@@ -291,6 +294,13 @@ export async function startMetricsProxy(upstreamBaseUrl) {
           // not enough — same payload will fail again. Skip until tomorrow,
           // student can re-add provider via `krasavacode setup` if needed.
           effectiveReason = 'incompatible';
+        } else if (code === 404) {
+          // 404 = "model not found on this provider". Likely model rename
+          // (OpenRouter does this often). One hour skip, may recover.
+          effectiveReason = 'per-hour';
+        } else if (code >= 500) {
+          // 5xx = transient provider issue. Short skip.
+          effectiveReason = 'per-minute';
         } else if (choice.id === 'pollinations') {
           effectiveReason = 'per-minute';
         } else {
