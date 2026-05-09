@@ -1,9 +1,10 @@
 name: Publish to npm
 
+# Автопубликация выключена — релизы выпускаются вручную через `npm publish`.
+# Workflow остаётся как ручной (Actions → Publish to npm → Run workflow),
+# но требует NPM_TOKEN или Trusted Publishing на стороне npm.
 on:
-  push:
-    tags:
-      - 'v*'
+  workflow_dispatch:
 
 jobs:
   publish:
