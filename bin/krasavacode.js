@@ -5,18 +5,18 @@ import { ensurePreset } from '../src/preset.js';
 import { launchClaude } from '../src/launch.js';
 import { runUpgrade } from '../src/upgrade.js';
 import { runDoctor } from '../src/doctor.js';
-import { runSetupGemini } from '../src/setup-gemini.js';
+import { runSetup } from '../src/setup.js';
 
 // Hardcoded so it works inside Bun --compile (no FS access to package.json)
-const VERSION = '0.3.6';
+const VERSION = '0.4.0';
 
 const cmd = process.argv[2];
 
 async function main() {
   if (cmd === 'doctor') return runDoctor();
   if (cmd === 'upgrade') return runUpgrade();
-  if (cmd === 'setup-gemini' || cmd === 'gemini') {
-    const result = await runSetupGemini();
+  if (cmd === 'setup' || cmd === 'setup-gemini' || cmd === 'gemini') {
+    const result = await runSetup();
     if (!result?.launchAfter) return;
     // fall through to normal launch flow below
   }

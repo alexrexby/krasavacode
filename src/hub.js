@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { CCR_PORT } from './preset.js';
-import { loadGeminiKey } from './setup-gemini.js';
+import { configuredProviders, loadProviderKey, getProviderEnvVarName } from './providers.js';
 import { startMetricsProxy } from './metrics-proxy.js';
 
 const HOST = '127.0.0.1';
@@ -40,11 +40,13 @@ export async function startHub(paths) {
 
   process.stdout.write(`🚀 Поднимаю локальный gateway на порту ${PORT}… `);
 
-  // Inject GEMINI_API_KEY into ccr env if user has configured Gemini.
-  // ccr's config.json references it as $GEMINI_API_KEY (env-interpolation).
+  // Inject every configured provider's API key as env var so that ccr's
+  // config.json can reference them via interpolation ($CEREBRAS_API_KEY etc).
   const ccrEnv = { ...paths.env };
-  const geminiKey = await loadGeminiKey();
-  if (geminiKey) ccrEnv.GEMINI_API_KEY = geminiKey;
+  for (const id of await configuredProviders()) {
+    const key = await loadProviderKey(id);
+    if (key) ccrEnv[getProviderEnvVarName(id)] = key;
+  }
 
   const child = spawn(paths.ccrBin, ['start'], {
     stdio: process.env.KRASAVACODE_DEBUG ? 'inherit' : 'pipe',

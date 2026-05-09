@@ -1,0 +1,234 @@
+/**
+ * Provider registry: единый источник правды для всех бесплатных провайдеров.
+ *
+ * Приоритет в chain (по убыванию щедрости free tier):
+ *   1. cerebras    — 1M токенов/день, Llama 3.3 70B / Qwen3 235B
+ *   2. groq        — 1000 RPD, Kimi K2 / DeepSeek-R1
+ *   3. gemini      — 250 RPD, Gemini 2.5 Flash (фолбэк)
+ *   4. pollinations — без квоты, gpt-oss-20b (последний резерв)
+ */
+
+import { homedir } from 'node:os';
+import { join } from 'node:path';
+import { readFile, access } from 'node:fs/promises';
+
+const ROOT = join(homedir(), '.krasavacode');
+export const KEYS_DIR = join(ROOT, 'keys');
+
+// Keys live in ~/.krasavacode/keys/<provider>.env as: PROVIDER_API_KEY=...
+const ENV_VAR_NAMES = {
+  cerebras: 'CEREBRAS_API_KEY',
+  groq: 'GROQ_API_KEY',
+  gemini: 'GEMINI_API_KEY',
+};
+
+export const PROVIDERS = {
+  cerebras: {
+    id: 'cerebras',
+    name: 'Cerebras',
+    tagline: '1M токенов/день, скорость 2600 ток/сек',
+    consoleUrl: 'https://cloud.cerebras.ai/?utm_source=krasavacode',
+    keyPattern: /^csk-[A-Za-z0-9]{20,}$/,
+    keyExample: 'csk-…',
+    keyHowto: [
+      'Зарегистрируйся (Sign up) — бесплатно, без карты',
+      'В дашборде нажми «API Keys» в левом меню',
+      'Нажми «Create API Key» → введи любое название',
+      'Скопируй ключ (начинается с csk-)',
+    ],
+    quota: '~1 000 000 токенов в день, 30 запросов/мин',
+    bestModel: 'Qwen 3 235B (Cerebras)',
+    rpd: null, // unlimited by RPD, only TPD-bound
+    tpd: 1_000_000,
+    rpm: 30,
+    contextLimit: 8_000,
+    // OpenAI-compatible API
+    verify: async (key) => {
+      const res = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'authorization': `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b',
+          messages: [{ role: 'user', content: 'Reply: ok' }],
+          max_tokens: 5,
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { msg = (await res.json())?.error?.message || msg; } catch {}
+        return { ok: false, error: msg };
+      }
+      const data = await res.json();
+      return { ok: true, text: data.choices?.[0]?.message?.content?.trim() || 'ok' };
+    },
+    ccrProvider: () => ({
+      name: 'cerebras',
+      api_base_url: 'https://api.cerebras.ai/v1/chat/completions',
+      api_key: '$CEREBRAS_API_KEY',
+      models: ['qwen-3-235b-a22b-instruct-2507', 'llama-3.3-70b', 'gpt-oss-120b'],
+    }),
+    defaultModel: 'qwen-3-235b-a22b-instruct-2507',
+  },
+
+  groq: {
+    id: 'groq',
+    name: 'Groq',
+    tagline: '1000 запросов/день, Kimi K2 + DeepSeek-R1',
+    consoleUrl: 'https://console.groq.com/keys',
+    keyPattern: /^gsk_[A-Za-z0-9]{40,}$/,
+    keyExample: 'gsk_…',
+    keyHowto: [
+      'Войди через Google или GitHub — без карты',
+      'Перейди в раздел «API Keys» (страница уже открыта)',
+      'Нажми «Create API Key» → введи название',
+      'Скопируй ключ (начинается с gsk_)',
+    ],
+    quota: '~1 000 запросов в день, 30 запросов/мин',
+    bestModel: 'Kimi K2 (через Groq)',
+    rpd: 1000,
+    tpd: null,
+    rpm: 30,
+    contextLimit: 128_000,
+    verify: async (key) => {
+      const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'authorization': `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [{ role: 'user', content: 'Reply: ok' }],
+          max_tokens: 5,
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { msg = (await res.json())?.error?.message || msg; } catch {}
+        return { ok: false, error: msg };
+      }
+      const data = await res.json();
+      return { ok: true, text: data.choices?.[0]?.message?.content?.trim() || 'ok' };
+    },
+    ccrProvider: () => ({
+      name: 'groq',
+      api_base_url: 'https://api.groq.com/openai/v1/chat/completions',
+      api_key: '$GROQ_API_KEY',
+      models: [
+        'moonshotai/kimi-k2-instruct',
+        'deepseek-r1-distill-llama-70b',
+        'llama-3.3-70b-versatile',
+        'qwen/qwen3-32b',
+      ],
+    }),
+    defaultModel: 'moonshotai/kimi-k2-instruct',
+  },
+
+  gemini: {
+    id: 'gemini',
+    name: 'Google Gemini',
+    tagline: '250 запросов/день, Gemini 2.5 Flash',
+    consoleUrl: 'https://aistudio.google.com/apikey',
+    keyPattern: /^AIza[A-Za-z0-9_-]{35}$/,
+    keyExample: 'AIzaSy…',
+    keyHowto: [
+      'Войди через свой Google-аккаунт (Gmail/YouTube подойдут)',
+      'Нажми «Create API key» наверху страницы',
+      'Если попросит выбрать проект — оставь предложенный',
+      'Скопируй ключ (начинается с AIza)',
+    ],
+    quota: '~250 запросов в день, 10 запросов/мин',
+    bestModel: 'Gemini 2.5 Flash',
+    rpd: 250,
+    tpd: null,
+    rpm: 10,
+    contextLimit: 1_000_000,
+    verify: async (key) => {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(key)}`;
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: 'Reply: ok' }] }],
+          generationConfig: { maxOutputTokens: 20 },
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try { msg = (await res.json())?.error?.message || msg; } catch {}
+        return { ok: false, error: msg };
+      }
+      const data = await res.json();
+      return { ok: true, text: (data.candidates?.[0]?.content?.parts?.[0]?.text || 'ok').trim() };
+    },
+    ccrProvider: () => ({
+      name: 'gemini',
+      api_base_url: 'https://generativelanguage.googleapis.com/v1beta/models/',
+      api_key: '$GEMINI_API_KEY',
+      models: ['gemini-2.5-flash', 'gemini-flash-latest'],
+      transformer: { use: ['gemini'] },
+    }),
+    defaultModel: 'gemini-2.5-flash',
+  },
+};
+
+export const PROVIDER_PRIORITY = ['cerebras', 'groq', 'gemini'];
+
+export function pollinationsProvider() {
+  return {
+    name: 'pollinations',
+    api_base_url: 'https://text.pollinations.ai/openai/chat/completions',
+    api_key: 'public',
+    models: ['openai', 'openai-fast'],
+  };
+}
+
+function envFile(providerId) {
+  return join(KEYS_DIR, `${providerId}.env`);
+}
+
+async function exists(p) { return access(p).then(() => true).catch(() => false); }
+
+export async function loadProviderKey(providerId) {
+  // New layout: ~/.krasavacode/keys/<id>.env
+  const newPath = envFile(providerId);
+  // Legacy layout (gemini only): ~/.krasavacode/gemini.env
+  const legacyPath = join(ROOT, `${providerId}.env`);
+
+  for (const p of [newPath, legacyPath]) {
+    try {
+      const content = await readFile(p, 'utf8');
+      const varName = ENV_VAR_NAMES[providerId];
+      const m = content.match(new RegExp(`^${varName}=(.+)$`, 'm'));
+      if (m) return m[1].trim();
+    } catch {}
+  }
+  return null;
+}
+
+export async function isProviderConfigured(providerId) {
+  return (await loadProviderKey(providerId)) != null;
+}
+
+/** Returns ids of all configured providers, in priority order. */
+export async function configuredProviders() {
+  const result = [];
+  for (const id of PROVIDER_PRIORITY) {
+    if (await isProviderConfigured(id)) result.push(id);
+  }
+  return result;
+}
+
+export function getProviderEnvVarName(providerId) {
+  return ENV_VAR_NAMES[providerId];
+}
+
+export function providerEnvFile(providerId) {
+  return envFile(providerId);
+}

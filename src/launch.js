@@ -2,14 +2,15 @@ import { spawn } from 'node:child_process';
 import { mkdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { isGeminiConfigured } from './setup-gemini.js';
-import { getQuotaInfo } from './metrics-proxy.js';
+import { configuredProviders, PROVIDERS } from './providers.js';
+import { getCooldowns } from './cooldowns.js';
 
 const PLACEHOLDER_TOKEN = 'sk-krasavacode-local';
 const CLAUDE_CONFIG_DIR = join(homedir(), '.krasavacode', 'claude-config');
 
 export async function launchClaude(paths, hub /*, detection */) {
-  const geminiOn = await isGeminiConfigured();
+  const configured = await configuredProviders();
+  const cooldowns = await getCooldowns();
   // Isolate Claude Code's config/credentials from any real Anthropic login
   // the student may have on this machine (~/.claude/). This is the *only*
   // way to suppress the "Welcome back, NAME · publerplatforma@gmail.com's
@@ -47,7 +48,7 @@ export async function launchClaude(paths, hub /*, detection */) {
   // Set KRASAVACODE_BARE=0 to disable for debugging.
   const useBare = process.env.KRASAVACODE_BARE !== '0';
   const passthroughArgs = process.argv.slice(2)
-    .filter(a => !['doctor', 'upgrade', 'setup-gemini', 'gemini'].includes(a));
+    .filter(a => !['doctor', 'upgrade', 'setup', 'setup-gemini', 'gemini'].includes(a));
   if (useBare && !passthroughArgs.includes('--bare')) passthroughArgs.unshift('--bare');
 
   const W = 64;
@@ -55,30 +56,26 @@ export async function launchClaude(paths, hub /*, detection */) {
     const pad = Math.max(0, W - 2 - [...txt].length);
     return '┃ ' + txt + ' '.repeat(pad) + '┃';
   };
-  const quota = await getQuotaInfo();
   console.log('');
   console.log('┏' + '━'.repeat(W - 1) + '┓');
   console.log(line('  K R A S A V A C O D E'));
   console.log(line('  Бесплатный вайбкодинг через локальный hub'));
   console.log('┣' + '━'.repeat(W - 1) + '┫');
-  if (geminiOn) {
-    console.log(line('  ✓ Модель: Google Gemini 2.5 Flash'));
-    const left = quota.perDay - quota.used;
-    const warn = Math.floor(quota.perDay / 5); // 20%
-    if (left > warn) {
-      console.log(line(`    Сегодня осталось: ${left} из ${quota.perDay} запросов`));
-    } else if (left > 0) {
-      console.log(line(`  ⚠️  Осталось ${left} из ${quota.perDay} — обнулится в ~11:00 МСК`));
-    } else {
-      console.log(line(`  ❌ Лимит на сегодня исчерпан (${quota.used} из ${quota.perDay})`));
-      console.log(line(`     Обнулится в ~11:00 МСК. krasavacode setup-gemini`));
-    }
-    console.log(line('    1 твой вопрос ≈ 3–10 запросов (Claude использует tools)'));
+  if (configured.length === 0) {
+    console.log(line('  · Pollinations (gpt-oss-20b, без квот, слабая модель)'));
+    console.log(line('  💡 Лучше модель бесплатно: krasavacode setup'));
   } else {
-    console.log(line('  · Модель: gpt-oss-20b через Pollinations'));
-    console.log(line('    (бесплатно, без логина)'));
-    console.log(line(`    Сегодня сделал ${quota.used} запросов`));
-    console.log(line('  💡 Лучше модель: krasavacode setup-gemini'));
+    console.log(line('  Активная цепочка фолбэков:'));
+    let i = 1;
+    for (const id of configured) {
+      const p = PROVIDERS[id];
+      const cd = cooldowns[id];
+      const onCooldown = cd && new Date(cd).getTime() > Date.now();
+      const tag = onCooldown ? '⏳ на cooldown' : '✓ готов';
+      console.log(line(`    ${i++}. ${p.name} — ${tag}`));
+    }
+    console.log(line(`    ${i}. Pollinations (последний резерв)`));
+    console.log(line('  При 429 — автоматически прыгает на следующий'));
   }
   console.log('┗' + '━'.repeat(W - 1) + '┛');
   console.log('');

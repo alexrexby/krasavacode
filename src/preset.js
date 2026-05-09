@@ -1,85 +1,62 @@
 import { mkdir, readFile, writeFile, copyFile, access } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { isGeminiConfigured } from './setup-gemini.js';
+import { PROVIDERS, configuredProviders, pollinationsProvider } from './providers.js';
 
+const ROOT = join(homedir(), '.krasavacode');
 const CCR_DIR = join(homedir(), '.claude-code-router');
 const CCR_CONFIG = join(CCR_DIR, 'config.json');
-const STATE_FILE = join(homedir(), '.krasavacode', 'state.json');
+const STATE_FILE = join(ROOT, 'state.json');
 
 const KRASAVACODE_MARKER = 'krasavacode/managed';
 
-function pollinationsProvider() {
-  return {
-    name: 'pollinations',
-    api_base_url: 'https://text.pollinations.ai/openai/chat/completions',
-    api_key: 'public',
-    models: ['openai', 'openai-fast', 'gpt-oss-20b'],
-  };
-}
+async function readState() { try { return JSON.parse(await readFile(STATE_FILE, 'utf8')); } catch { return {}; } }
+async function writeState(s) { await writeFile(STATE_FILE, JSON.stringify(s, null, 2)); }
+async function exists(p) { return access(p).then(() => true).catch(() => false); }
 
-function geminiProvider() {
-  // gemini-2.5-pro free tier = 0 requests; only flash is actually free.
-  return {
-    name: 'gemini',
-    api_base_url: 'https://generativelanguage.googleapis.com/v1beta/models/',
-    api_key: '$GEMINI_API_KEY',
-    models: ['gemini-2.5-flash', 'gemini-flash-latest'],
-    transformer: { use: ['gemini'] },
-  };
-}
+async function buildConfig() {
+  const configured = await configuredProviders();
+  const providers = configured.map(id => PROVIDERS[id].ccrProvider());
+  // Pollinations always last — final no-key fallback
+  providers.push(pollinationsProvider());
 
-function buildConfig({ withGemini }) {
-  const Providers = withGemini
-    ? [geminiProvider(), pollinationsProvider()]
-    : [pollinationsProvider()];
+  const firstId = configured[0];
+  const firstModel = firstId ? PROVIDERS[firstId].defaultModel : 'openai';
+  const firstProv = firstId ? firstId : 'pollinations';
 
-  const Router = withGemini
-    ? {
-        default: 'gemini,gemini-2.5-flash',
-        background: 'gemini,gemini-2.5-flash',
-        think: 'gemini,gemini-2.5-flash',
-        longContext: 'gemini,gemini-2.5-flash',
-        longContextThreshold: 60000,
-      }
-    : {
-        default: 'pollinations,openai',
-        background: 'pollinations,openai-fast',
-        think: 'pollinations,openai',
-        longContext: 'pollinations,openai',
-        longContextThreshold: 60000,
-      };
-
-  return {
+  const config = {
     HOST: '127.0.0.1',
     PORT: 3456,
     LOG: false,
     API_TIMEOUT_MS: 600000,
-    Providers,
-    Router,
+    Providers: providers,
+    Router: {
+      // Static fallback if custom-router returns null
+      default:     `${firstProv},${firstModel}`,
+      background:  `${firstProv},${firstModel}`,
+      think:       `${firstProv},${firstModel}`,
+      longContext: `${firstProv},${firstModel}`,
+      longContextThreshold: 60000,
+    },
     _krasavacode: KRASAVACODE_MARKER,
   };
-}
 
-async function readState() {
-  try { return JSON.parse(await readFile(STATE_FILE, 'utf8')); }
-  catch { return {}; }
+  // No custom router: provider selection is done at the metrics-proxy layer,
+  // which rewrites body.model = "provider,name" so ccr forwards directly.
+  return config;
 }
-async function writeState(s) { await writeFile(STATE_FILE, JSON.stringify(s, null, 2)); }
-async function exists(p) { return access(p).then(() => true).catch(() => false); }
 
 /**
- * Generates ~/.claude-code-router/config.json:
- *   - If user has run setup-gemini → Gemini first, Pollinations as fallback Provider
- *   - Else → Pollinations only
- *
- * Returns { withGemini: boolean }.
+ * Generates ~/.claude-code-router/config.json AND the custom router file
+ * ~/.krasavacode/router.js. Backs up any pre-existing user config that
+ * isn't ours.
  */
 export async function ensurePreset() {
+  await mkdir(ROOT, { recursive: true });
   await mkdir(CCR_DIR, { recursive: true });
+
   const state = await readState();
-  const withGemini = await isGeminiConfigured();
-  const config = buildConfig({ withGemini });
+  const config = await buildConfig();
 
   if (await exists(CCR_CONFIG)) {
     let existing;
@@ -93,12 +70,12 @@ export async function ensurePreset() {
       await copyFile(CCR_CONFIG, backupPath);
       state.userConfigBackedUp = backupPath;
       await writeState(state);
-      console.log(`💾 Найден свой config.json у claude-code-router — сохранил резервную копию: ${backupPath}`);
+      console.log(`💾 Найден свой config.json у claude-code-router — резервная копия: ${backupPath}`);
     }
   }
 
   await writeFile(CCR_CONFIG, JSON.stringify(config, null, 2));
-  return { withGemini };
+  return { configured: await configuredProviders() };
 }
 
 export const CCR_PORT = 3456;

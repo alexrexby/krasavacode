@@ -3,6 +3,8 @@ import { homedir, platform, arch, totalmem } from 'node:os';
 import { join } from 'node:path';
 import { access, readFile } from 'node:fs/promises';
 import net from 'node:net';
+import { configuredProviders, PROVIDERS } from './providers.js';
+import { getCooldowns } from './cooldowns.js';
 
 const ROOT = join(homedir(), '.krasavacode');
 
@@ -62,6 +64,23 @@ export async function runDoctor() {
   console.log('\nПорты:');
   check('3456 (claude-code-router)', await checkPort(3456), 'свободен или используется ccr');
   check('20128 (omniroute upgrade)', await checkPort(20128));
+
+  console.log('\nПровайдеры:');
+  const cfg = await configuredProviders();
+  const cd = await getCooldowns();
+  if (cfg.length === 0) {
+    console.log('  пусто (используется Pollinations gpt-oss-20b — слабая модель)');
+    console.log('  → krasavacode setup для подключения Cerebras / Groq / Gemini');
+  } else {
+    let i = 1;
+    for (const id of cfg) {
+      const p = PROVIDERS[id];
+      const onCD = cd[id] && new Date(cd[id]).getTime() > Date.now();
+      const status = onCD ? `⏳ cooldown до ${new Date(cd[id]).toLocaleString('ru')}` : '✓ готов';
+      console.log(`  ${i++}. ${p.name} — ${status}`);
+    }
+    console.log(`  ${i}. Pollinations (последний резерв)`);
+  }
 
   console.log('\nState:');
   try {
