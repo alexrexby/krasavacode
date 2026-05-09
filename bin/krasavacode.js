@@ -8,7 +8,7 @@ import { runDoctor } from '../src/doctor.js';
 import { runSetup } from '../src/setup.js';
 
 // Hardcoded so it works inside Bun --compile (no FS access to package.json)
-const VERSION = '0.4.7';
+const VERSION = '0.4.8';
 
 const cmd = process.argv[2];
 
