@@ -211,8 +211,12 @@ export async function startMetricsProxy(upstreamBaseUrl) {
         return;
       }
 
-      // /v1/messages: provider selection with retry-on-429
-      for (let attempt = 1; attempt <= 4; attempt++) {
+      // /v1/messages: provider selection with retry-on-failure.
+      // Max attempts = number of available providers (configured + Pollinations).
+      // Each failed attempt cooldowns the provider, so the next iteration
+      // automatically picks a different one.
+      const maxAttempts = (await configuredProviders()).length + 1;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         const choice = await chooseProvider(originalBody.length);
         if (!choice) {
           if (debug) console.error('[metrics] all providers on cooldown');
@@ -233,7 +237,7 @@ export async function startMetricsProxy(upstreamBaseUrl) {
           return;
         }
 
-        if (debug) console.error(`[metrics] attempt ${attempt} → ${upRes.statusCode}`);
+        if (debug) console.error(`[metrics] attempt ${attempt}/${maxAttempts} → ${upRes.statusCode} (${choice.id})`);
 
         // 4xx provider failures → mark cooldown and retry next provider.
         // We retry on:
