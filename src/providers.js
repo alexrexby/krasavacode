@@ -180,8 +180,10 @@ export const PROVIDERS = {
     name: 'Polza.ai (рубли)',
     tagline: 'Платный fallback для РФ — 100₽ депозита хватает на тысячи запросов',
     consoleUrl: 'https://polza.ai/dashboard',
-    keyPattern: /^pl-[A-Za-z0-9_-]{20,}$|^sk-[A-Za-z0-9_-]{20,}$/,
-    keyExample: 'pl-… или sk-…',
+    // Formats наблюдались: pza_<32+ alnum> (новые ключи Polza), на legacy
+    // также встречаются pl-… и sk-… — поддерживаем все три.
+    keyPattern: /^pza_[A-Za-z0-9]{20,}$|^pl-[A-Za-z0-9_-]{20,}$|^sk-[A-Za-z0-9_-]{20,}$/,
+    keyExample: 'pza_…',
     keyHowto: [
       'Зарегистрируйся через email или Google (без VPN из РФ)',
       'Пополни баланс российской картой минимум на 100₽',
@@ -211,8 +213,12 @@ export const PROVIDERS = {
         let display = 'ключ принят';
         try {
           const data = await res.json();
-          const bal = data.balance ?? data.data?.balance ?? data.amount;
-          if (bal != null) display = `баланс: ${bal}₽`;
+          // Polza /balance returns: {amount, reservedAmount, spentAmount, updatedAt}
+          const bal = data.amount ?? data.balance ?? data.data?.balance;
+          if (bal != null) {
+            const num = Number(bal);
+            display = Number.isFinite(num) ? `баланс: ${num.toFixed(2)}₽` : `баланс: ${bal}`;
+          }
         } catch {}
         return { ok: true, text: display };
       } catch (e) {
