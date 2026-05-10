@@ -161,8 +161,8 @@ function rewriteBodyWithProvider(originalBody, providerId, modelName, debug = fa
     parsed.model = `${providerId},${modelName}`;
     if (providerId === 'cerebras') cleanForCerebras(parsed);
     const stats = compressPayload(parsed);
-    if (debug && stats.saved > 0) {
-      const pct = ((stats.saved / stats.before) * 100).toFixed(1);
+    if (debug) {
+      const pct = stats.before > 0 ? ((stats.saved / stats.before) * 100).toFixed(1) : '0.0';
       console.error(`[compress] ${providerId}: -${stats.saved}b (${pct}%) — ${stats.before}→${stats.after}`);
     }
     return Buffer.from(JSON.stringify(parsed));
@@ -236,10 +236,12 @@ export async function startMetricsProxy(upstreamBaseUrl) {
       }
 
       // /v1/messages: provider selection with retry-on-failure.
-      // Max attempts = number of available providers (configured + Pollinations).
-      // Each failed attempt cooldowns the provider, so the next iteration
-      // automatically picks a different one.
-      const maxAttempts = (await configuredProviders()).length + 1;
+      // Max attempts: at least 3 даже если у нас только Pollinations
+      // (его per-IP "queue full" 429-ит на параллельных запросах,
+      // но через 1-2 секунды можно опять). С добавкой провайдеров —
+      // configured.length + 1 (для pollinations) либо 3 — что больше.
+      const numConfigured = (await configuredProviders()).length;
+      const maxAttempts = Math.max(numConfigured + 1, 3);
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         const choice = await chooseProvider(originalBody.length);
         if (!choice) {
@@ -289,6 +291,14 @@ export async function startMetricsProxy(upstreamBaseUrl) {
         await new Promise(r => upRes.on('end', r));
         const upBody = Buffer.concat(errChunks).toString('utf8');
         if (debug) console.error(`[metrics] ${upRes.statusCode} from ${choice.id}: ${upBody.slice(0, 200)}`);
+
+        // Pollinations queue-full responses come back almost instantly —
+        // the upstream is fine, just busy. Wait briefly so the next attempt
+        // doesn't slam back the same race.
+        const isQueueFull = upBody.includes('Queue full') || upBody.includes('queue full');
+        if (choice.id === 'pollinations' && isQueueFull) {
+          await new Promise(r => setTimeout(r, 1500));
+        }
 
         let effectiveReason;
         if (code === 401 || code === 403) {
