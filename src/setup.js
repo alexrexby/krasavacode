@@ -486,16 +486,19 @@ async function browserOnboarding({ publicMode = false } = {}) {
       res.writeHead(403, { 'Content-Type': 'text/plain' });
       return res.end('forbidden — wrong or missing token');
     }
-    if (req.method === 'GET' && (req.url === '/' || req.url.startsWith('/?'))) {
+    // Normalise path — strip query string so route comparisons match
+    // /api/verify?token=... etc (public-mode wraps every fetch with ?token=).
+    const path = (req.url || '').split('?')[0];
+    if (req.method === 'GET' && path === '/') {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       return res.end(html(token));
     }
-    if (req.method === 'GET' && req.url === '/api/status') {
+    if (req.method === 'GET' && path === '/api/status') {
       const cfg = await configuredProviders();
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ configured: cfg }));
     }
-    if (req.method === 'POST' && req.url.split('?')[0] === '/api/verify') {
+    if (req.method === 'POST' && path === '/api/verify') {
       const debug = process.env.KRASAVACODE_DEBUG === '1';
       let provider = '?';
       try {
@@ -543,9 +546,9 @@ async function browserOnboarding({ publicMode = false } = {}) {
         } catch {}
       }
     }
-    if (req.method === 'POST' && (req.url === '/api/done' || req.url === '/api/cancel')) {
+    if (req.method === 'POST' && (path === '/api/done' || path === '/api/cancel')) {
       let projectId = null;
-      if (req.url === '/api/done') {
+      if (path === '/api/done') {
         try {
           const body = await readJsonBody(req).catch(() => ({}));
           projectId = body?.projectId || null;
@@ -553,7 +556,7 @@ async function browserOnboarding({ publicMode = false } = {}) {
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end('{}');
-      const ok = req.url === '/api/done';
+      const ok = path === '/api/done';
       setTimeout(async () => {
         const cfg = await configuredProviders();
         const project = FIRST_PROJECTS.find(p => p.id === projectId);
