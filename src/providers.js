@@ -195,18 +195,26 @@ export const PROVIDERS = {
     rpm: 60,
     contextLimit: 128_000,
     verify: async (key) => {
+      // /api/v1/models — публичный endpoint (200 даже без ключа), не годится
+      // для проверки валидности. /api/v1/balance — auth-required, маленький
+      // ответ, и заодно показывает остаток на счёте ученику.
       try {
-        const res = await fetch('https://polza.ai/api/v1/models', {
+        const res = await fetch('https://polza.ai/api/v1/balance', {
           headers: { 'authorization': `Bearer ${key}` },
-          signal: AbortSignal.timeout(15000),
+          signal: AbortSignal.timeout(20000),
         });
         if (res.status === 401 || res.status === 403) {
-          return { ok: false, error: 'Ключ не принят. Проверь, что скопировал целиком и баланс пополнен.' };
+          return { ok: false, error: 'Ключ не принят. Скопируй целиком и убедись, что баланс пополнен.' };
         }
         if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
-        const data = await res.json();
-        const n = data.data?.length || 0;
-        return { ok: true, text: `доступно моделей: ${n}` };
+        // Try to read balance to display, but don't fail if format unexpected
+        let display = 'ключ принят';
+        try {
+          const data = await res.json();
+          const bal = data.balance ?? data.data?.balance ?? data.amount;
+          if (bal != null) display = `баланс: ${bal}₽`;
+        } catch {}
+        return { ok: true, text: display };
       } catch (e) {
         return { ok: false, error: 'Сеть не отвечает: ' + e.message };
       }
@@ -215,15 +223,19 @@ export const PROVIDERS = {
       name: 'polza',
       api_base_url: 'https://polza.ai/api/v1/chat/completions',
       api_key: '$POLZA_API_KEY',
-      // Перечисляем дешёвые но мощные модели для кодинга
+      // Цены (input prompt) проверены через API caталог Polza май 2026:
+      //   deepseek/deepseek-r1-distill-llama-70b  2.72₽/1M  ctx=131k  (default)
+      //   qwen/qwen-2.5-coder-32b-instruct        2.72₽/1M  ctx=32k
+      //   qwen/qwen3.5-flash-02-23                5.88₽/1M  ctx=1M
+      //   z-ai/glm-4.7-flash                      6.34₽/1M  ctx=200k
       models: [
-        'deepseek/deepseek-chat',
+        'deepseek/deepseek-r1-distill-llama-70b',
         'qwen/qwen-2.5-coder-32b-instruct',
-        'meta-llama/llama-3.3-70b-instruct',
-        'openai/gpt-4o-mini',
+        'qwen/qwen3.5-flash-02-23',
+        'z-ai/glm-4.7-flash',
       ],
     }),
-    defaultModel: 'deepseek/deepseek-chat',
+    defaultModel: 'deepseek/deepseek-r1-distill-llama-70b',
   },
 
   nvidia: {
