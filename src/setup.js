@@ -495,28 +495,52 @@ async function browserOnboarding({ publicMode = false } = {}) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ configured: cfg }));
     }
-    if (req.method === 'POST' && req.url === '/api/verify') {
+    if (req.method === 'POST' && req.url.split('?')[0] === '/api/verify') {
+      const debug = process.env.KRASAVACODE_DEBUG === '1';
+      let provider = '?';
       try {
         const body = await readJsonBody(req);
-        const provider = String(body.provider || '');
+        provider = String(body.provider || '?');
         const key = String(body.key || '').trim();
+        if (debug) console.error(`[verify] provider=${provider} keyLen=${key.length}`);
         const def = PROVIDERS[provider];
-        if (!def) throw new Error('Unknown provider: ' + provider);
+        if (!def) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Unknown provider: ' + provider }));
+        }
         if (!def.keyPattern.test(key)) {
+          if (debug) console.error(`[verify] ${provider}: bad key format`);
           res.writeHead(400, { 'Content-Type': 'application/json' });
           return res.end(JSON.stringify({ error: `Не похоже на ключ ${def.name}. Ожидается: ${def.keyExample}` }));
         }
-        const r = await def.verify(key);
-        if (!r.ok) {
+        let r;
+        try {
+          r = await def.verify(key);
+        } catch (verifyErr) {
+          if (debug) console.error(`[verify] ${provider}: verify-fn threw:`, verifyErr);
           res.writeHead(400, { 'Content-Type': 'application/json' });
-          return res.end(JSON.stringify({ error: r.error }));
+          return res.end(JSON.stringify({ error: 'Внутренняя ошибка проверки: ' + (verifyErr?.message || 'unknown') }));
         }
-        await persistKey(provider, key);
+        if (debug) console.error(`[verify] ${provider}: ok=${r?.ok} ${r?.text || r?.error || ''}`);
+        if (!r?.ok) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: r?.error || 'verify failed' }));
+        }
+        try {
+          await persistKey(provider, key);
+        } catch (persistErr) {
+          if (debug) console.error(`[verify] ${provider}: persistKey threw:`, persistErr);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Не удалось сохранить ключ: ' + (persistErr?.message || 'unknown') }));
+        }
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ ok: true, text: r.text }));
+        return res.end(JSON.stringify({ ok: true, text: r.text || 'ok' }));
       } catch (e) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ error: e.message }));
+        if (debug) console.error(`[verify] ${provider}: outer-catch:`, e);
+        try {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Сервер упал: ' + (e?.message || 'unknown') }));
+        } catch {}
       }
     }
     if (req.method === 'POST' && (req.url === '/api/done' || req.url === '/api/cancel')) {
