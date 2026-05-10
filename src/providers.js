@@ -22,6 +22,7 @@ const ENV_VAR_NAMES = {
   openrouter: 'OPENROUTER_API_KEY',
   gemini: 'GEMINI_API_KEY',
   nvidia: 'NVIDIA_API_KEY',
+  polza: 'POLZA_API_KEY',
 };
 
 export const PROVIDERS = {
@@ -174,6 +175,57 @@ export const PROVIDERS = {
     defaultModel: 'meta-llama/llama-3.3-70b-instruct:free',
   },
 
+  polza: {
+    id: 'polza',
+    name: 'Polza.ai (рубли)',
+    tagline: 'Платный fallback для РФ — 100₽ депозита хватает на тысячи запросов',
+    consoleUrl: 'https://polza.ai/dashboard',
+    keyPattern: /^pl-[A-Za-z0-9_-]{20,}$|^sk-[A-Za-z0-9_-]{20,}$/,
+    keyExample: 'pl-… или sk-…',
+    keyHowto: [
+      'Зарегистрируйся через email или Google (без VPN из РФ)',
+      'Пополни баланс российской картой минимум на 100₽',
+      'В дашборде → API Keys → Create',
+      'Скопируй ключ',
+    ],
+    quota: 'Платный (100₽ ≈ 1000+ запросов на дешёвых моделях)',
+    bestModel: 'DeepSeek V3 / Qwen Coder (≤2₽ за 1M токенов)',
+    rpd: null,
+    tpd: null,
+    rpm: 60,
+    contextLimit: 128_000,
+    verify: async (key) => {
+      try {
+        const res = await fetch('https://polza.ai/api/v1/models', {
+          headers: { 'authorization': `Bearer ${key}` },
+          signal: AbortSignal.timeout(15000),
+        });
+        if (res.status === 401 || res.status === 403) {
+          return { ok: false, error: 'Ключ не принят. Проверь, что скопировал целиком и баланс пополнен.' };
+        }
+        if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+        const data = await res.json();
+        const n = data.data?.length || 0;
+        return { ok: true, text: `доступно моделей: ${n}` };
+      } catch (e) {
+        return { ok: false, error: 'Сеть не отвечает: ' + e.message };
+      }
+    },
+    ccrProvider: () => ({
+      name: 'polza',
+      api_base_url: 'https://polza.ai/api/v1/chat/completions',
+      api_key: '$POLZA_API_KEY',
+      // Перечисляем дешёвые но мощные модели для кодинга
+      models: [
+        'deepseek/deepseek-chat',
+        'qwen/qwen-2.5-coder-32b-instruct',
+        'meta-llama/llama-3.3-70b-instruct',
+        'openai/gpt-4o-mini',
+      ],
+    }),
+    defaultModel: 'deepseek/deepseek-chat',
+  },
+
   nvidia: {
     id: 'nvidia',
     name: 'NVIDIA NIM',
@@ -272,11 +324,12 @@ export const PROVIDERS = {
 };
 
 // Цепочка провайдеров. Первый = дефолт, далее fallback при cooldown/ошибках.
-// - groq, openrouter, gemini, nvidia — нормальные OpenAI-compatible, работают
-// - cerebras в самом конце т.к. strict-mode 400 на Anthropic payload (Claude
-//   Code-style cache_control, content как массив text-блоков), реально
-//   срабатывает только на простых запросах
-export const PROVIDER_PRIORITY = ['groq', 'openrouter', 'gemini', 'nvidia', 'cerebras'];
+// - groq, openrouter, gemini, nvidia — нормальные OpenAI-compatible free tier
+// - cerebras в конце т.к. strict-mode 400 на Anthropic payload (cache_control,
+//   content-array)
+// - polza — платный российский (рубли через карту), работает когда все free
+//   квоты исчерпаны. Включается только если ученик подключил его в setup.
+export const PROVIDER_PRIORITY = ['groq', 'openrouter', 'gemini', 'nvidia', 'cerebras', 'polza'];
 
 export function pollinationsProvider() {
   return {
