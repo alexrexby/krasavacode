@@ -236,16 +236,23 @@ export async function startMetricsProxy(upstreamBaseUrl) {
       }
 
       // /v1/messages: provider selection with retry-on-failure.
-      // Max attempts: at least 3 даже если у нас только Pollinations
-      // (его per-IP "queue full" 429-ит на параллельных запросах,
-      // но через 1-2 секунды можно опять). С добавкой провайдеров —
-      // configured.length + 1 (для pollinations) либо 3 — что больше.
       const numConfigured = (await configuredProviders()).length;
       const maxAttempts = Math.max(numConfigured + 1, 3);
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        const choice = await chooseProvider(originalBody.length);
+        let choice = await chooseProvider(originalBody.length);
+        // All on cooldown? Wait up to 30s for the soonest one to free up
+        // (Pollinations per-minute cooldown will recover quickly).
         if (!choice) {
-          if (debug) console.error('[metrics] all providers on cooldown');
+          if (debug) console.error('[metrics] all on cooldown — wait up to 30s');
+          const deadline = Date.now() + 30_000;
+          while (Date.now() < deadline) {
+            await new Promise(r => setTimeout(r, 2000));
+            choice = await chooseProvider(originalBody.length);
+            if (choice) break;
+          }
+        }
+        if (!choice) {
+          if (debug) console.error('[metrics] all providers on cooldown after 30s wait');
           res.writeHead(429, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(FRIENDLY_429()));
           return;
