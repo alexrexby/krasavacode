@@ -75,28 +75,18 @@ function trimToolResultText(text) {
   ].join('\n');
 }
 
-function processToolResultBlock(block, seenContents) {
-  // block.content can be a string or an array of {type:'text', text}
+function processToolResultBlock(block, _seenContents) {
+  // NOTE: ранее тут был dedup повторных одинаковых tool_result между turn'ами,
+  // но он ломал случаи когда Claude делал Edit→Read одного файла: повторное
+  // чтение заменялось маркером, модель видела "дублирует предыдущий" вместо
+  // обновлённого содержимого и путалась. Оставляем только trim длинных
+  // файлов — безопасное сжатие без потери смысла.
   if (typeof block.content === 'string') {
-    const trimmed = trimToolResultText(block.content);
-    // Dedup: if this exact content already appeared earlier in the conversation,
-    // replace with a reference. Saves megabytes when a file is read repeatedly.
-    if (trimmed.length > 200 && seenContents.has(trimmed)) {
-      block.content = `[…дублирует предыдущий tool_result (${trimmed.length} символов)…]`;
-    } else {
-      block.content = trimmed;
-      if (trimmed.length > 200) seenContents.add(trimmed);
-    }
+    block.content = trimToolResultText(block.content);
   } else if (Array.isArray(block.content)) {
     for (const sub of block.content) {
       if (sub && typeof sub.text === 'string') {
-        const trimmed = trimToolResultText(sub.text);
-        if (trimmed.length > 200 && seenContents.has(trimmed)) {
-          sub.text = `[…дублирует предыдущий tool_result (${trimmed.length} символов)…]`;
-        } else {
-          sub.text = trimmed;
-          if (trimmed.length > 200) seenContents.add(trimmed);
-        }
+        sub.text = trimToolResultText(sub.text);
       }
     }
   }
