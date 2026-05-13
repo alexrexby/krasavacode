@@ -81,7 +81,7 @@ export const PROVIDERS = {
     tagline: 'Платный российский — 100₽ депозита хватает на тысячи запросов',
     worksInRu: true, // Polza — российский провайдер
     geoNote: '✓ Российский сервис, оплата картой РФ, без VPN',
-    consoleUrl: 'https://polza.ai/dashboard',
+    consoleUrl: 'https://polza.ai/?referral=ghUJMigzbh',
     // Polza часто меняет формат ключей (pza_*, pl-*, sk-*, иногда без префикса).
     // Не блокируем по regex — пускаем на verify, который скажет точно.
     // Требуем только: не пустая строка длиной ≥ 16 без пробелов.

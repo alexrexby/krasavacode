@@ -207,4 +207,4 @@ npx krasavacode
 
 ## Лицензия
 
-MIT. Под капотом: [@anthropic-ai/claude-code](https://www.npmjs.com/package/@anthropic-ai/claude-code) + [@musistudio/claude-code-router](https://www.npmjs.com/package/@musistudio/claude-code-router). AI-провайдеры: [OpenRouter](https://openrouter.ai), [Polza.ai](https://polza.ai) — их условия использования на их сайтах.
+MIT. Под капотом: [@anthropic-ai/claude-code](https://www.npmjs.com/package/@anthropic-ai/claude-code) + [@musistudio/claude-code-router](https://www.npmjs.com/package/@musistudio/claude-code-router). AI-провайдеры: [OpenRouter](https://openrouter.ai), [Polza.ai](https://polza.ai/?referral=ghUJMigzbh) — их условия использования на их сайтах.
