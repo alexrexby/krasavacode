@@ -3,7 +3,7 @@ import net from 'node:net';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { configuredProviders, PROVIDERS, PROVIDER_PRIORITY } from './providers.js';
+import { configuredProviders, PROVIDERS, PROVIDER_PRIORITY, getProviderModels } from './providers.js';
 import { setCooldown, getCooldowns, cooldownUntil } from './cooldowns.js';
 import { compressPayload } from './compression.js';
 
@@ -58,8 +58,15 @@ function getFreePort() {
   });
 }
 
-/** Pick the first available provider not on cooldown, in priority order. */
-async function chooseProvider() {
+/**
+ * Pick the first available (provider, model) pair not on cooldown and not already tried.
+ * `tried` is a Map<providerId, Set<modelName>> tracking what we attempted this request.
+ *
+ * For each provider in priority order (skipping cooldowns), tries models in order
+ * (default first). Если все модели данного провайдера попробованы — переходит
+ * к следующему провайдеру.
+ */
+async function chooseProviderAndModel(tried) {
   const cd = await getCooldowns();
   const configured = await configuredProviders();
   const now = Date.now();
@@ -67,9 +74,23 @@ async function chooseProvider() {
 
   for (const id of configured) {
     if (onCooldown(id)) continue;
-    return { id, model: PROVIDERS[id].defaultModel };
+    const triedSet = tried.get(id) || new Set();
+    for (const m of getProviderModels(id)) {
+      if (!triedSet.has(m)) return { id, model: m };
+    }
   }
   return null;
+}
+
+// Detect 400 responses caused by the chosen model not supporting tool use.
+// These are model-level, not provider-level — we retry the SAME provider with
+// the next model rather than cooling it down. Patterns seen in the wild:
+//   Polza:      "No endpoints found that support tool use"
+//   OpenRouter: "does not support tool use" / "doesn't support function call"
+const TOOL_INCOMPAT_RE = /no endpoints found that support tool use|does(?:n't| not) support (?:tool|function)|tool (?:use|calls?) (?:is )?not supported/i;
+
+function isToolIncompatibility(body) {
+  return TOOL_INCOMPAT_RE.test(body || '');
 }
 
 function parseQuotaReason(upstreamBody) {
@@ -226,23 +247,34 @@ export async function startMetricsProxy(upstreamBaseUrl) {
         return;
       }
 
-      // /v1/messages: provider selection with retry-on-failure.
-      const numConfigured = (await configuredProviders()).length;
-      const maxAttempts = Math.max(numConfigured + 1, 3);
+      // /v1/messages: provider+model selection with retry-on-failure.
+      // tried: Map<providerId, Set<modelName>> — модели уже попробованные в
+      // рамках этого запроса (не путать с per-provider cooldown).
+      const tried = new Map();
+      const markTried = (id, model) => {
+        if (!tried.has(id)) tried.set(id, new Set());
+        tried.get(id).add(model);
+      };
+      // Каждый провайдер × модель = одна попытка. Плюс небольшой запас.
+      const totalSlots = (await configuredProviders())
+        .reduce((acc, id) => acc + getProviderModels(id).length, 0);
+      const maxAttempts = Math.max(totalSlots + 1, 3);
+
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        let choice = await chooseProvider();
-        // All on cooldown? Wait up to 30s for the soonest one to free up.
+        let choice = await chooseProviderAndModel(tried);
+        // All providers on cooldown (and нет неопробованных моделей)? Ждём до 30s
+        // пока самый ранний cooldown не отпустит.
         if (!choice) {
           if (debug) console.error('[metrics] all on cooldown — wait up to 30s');
           const deadline = Date.now() + 30_000;
           while (Date.now() < deadline) {
             await new Promise(r => setTimeout(r, 2000));
-            choice = await chooseProvider();
+            choice = await chooseProviderAndModel(tried);
             if (choice) break;
           }
         }
         if (!choice) {
-          if (debug) console.error('[metrics] all providers on cooldown after 30s wait');
+          if (debug) console.error('[metrics] no available (provider,model) pairs after 30s wait');
           res.writeHead(429, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(FRIENDLY_429()));
           return;
@@ -260,11 +292,11 @@ export async function startMetricsProxy(upstreamBaseUrl) {
           return;
         }
 
-        if (debug) console.error(`[metrics] attempt ${attempt}/${maxAttempts} → ${upRes.statusCode} (${choice.id})`);
+        if (debug) console.error(`[metrics] attempt ${attempt}/${maxAttempts} → ${upRes.statusCode} (${choice.id},${choice.model})`);
 
         // 4xx provider failures → mark cooldown and retry next provider.
         // We retry on:
-        //   400 — payload incompatible (cache_control etc)
+        //   400 — payload incompatible (cache_control etc) ИЛИ model без tool use
         //   401 — invalid/expired key
         //   403 — billing block / disabled
         //   404 — model name not on this provider (e.g. OpenRouter renamed)
@@ -289,16 +321,24 @@ export async function startMetricsProxy(upstreamBaseUrl) {
         const upBody = Buffer.concat(errChunks).toString('utf8');
         if (debug) console.error(`[metrics] ${upRes.statusCode} from ${choice.id}: ${upBody.slice(0, 200)}`);
 
+        // Помечаем (provider,model) как опробованные — в этом запросе мы к ним
+        // больше не вернёмся, даже если cooldown не ставим.
+        markTried(choice.id, choice.model);
+
+        // 400 + tool-incompatibility = проблема КОНКРЕТНОЙ модели, не провайдера.
+        // Не cooldown'им провайдер, просто пробуем следующую модель из его списка.
+        if (code === 404 || (code === 400 && isToolIncompatibility(upBody))) {
+          if (debug) console.error(`[metrics] model-level error (${code}) on ${choice.id},${choice.model} — try next model on same provider`);
+          continue;
+        }
+
         let effectiveReason;
         if (code === 401 || code === 403) {
           // Invalid/expired/blocked key — provider is dead until user re-runs setup.
           effectiveReason = 'per-day';
         } else if (code === 400) {
-          // 400 = payload incompatibility. cleanForOpenAICompat снимает
-          // большинство таких случаев, hour-cooldown достаточно.
-          effectiveReason = 'per-hour';
-        } else if (code === 404) {
-          // 404 = "model not found on this provider". Model rename (часто на OpenRouter).
+          // 400 без tool-incompat-сигнала = payload mismatch. cleanForOpenAICompat
+          // снимает большинство таких; hour-cooldown достаточно.
           effectiveReason = 'per-hour';
         } else if (code >= 500) {
           effectiveReason = 'per-minute';

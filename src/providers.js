@@ -132,19 +132,20 @@ export const PROVIDERS = {
       name: 'polza',
       api_base_url: 'https://polza.ai/api/v1/chat/completions',
       api_key: '$POLZA_API_KEY',
-      // Цены (input prompt) проверены через API caталог Polza май 2026:
-      //   deepseek/deepseek-r1-distill-llama-70b  2.72₽/1M  ctx=131k  (default)
-      //   qwen/qwen-2.5-coder-32b-instruct        2.72₽/1M  ctx=32k
-      //   qwen/qwen3.5-flash-02-23                5.88₽/1M  ctx=1M
-      //   z-ai/glm-4.7-flash                      6.34₽/1M  ctx=200k
+      // Цены (input prompt) проверены через API каталог Polza май 2026.
+      // ВАЖНО: Claude Code требует tool use на КАЖДОМ запросе. Reasoning-only
+      // модели (DeepSeek R1 distill и т.п.) сюда добавлять НЕЛЬЗЯ — Polza
+      // ответит 400 "No endpoints found that support tool use".
+      //   qwen/qwen-2.5-coder-32b-instruct        2.72₽/1M  ctx=32k   ✓ tools  (default)
+      //   qwen/qwen3.5-flash-02-23                5.88₽/1M  ctx=1M    ✓ tools
+      //   z-ai/glm-4.7-flash                      6.34₽/1M  ctx=200k  ✓ tools
       models: [
-        'deepseek/deepseek-r1-distill-llama-70b',
         'qwen/qwen-2.5-coder-32b-instruct',
         'qwen/qwen3.5-flash-02-23',
         'z-ai/glm-4.7-flash',
       ],
     }),
-    defaultModel: 'deepseek/deepseek-r1-distill-llama-70b',
+    defaultModel: 'qwen/qwen-2.5-coder-32b-instruct',
   },
 };
 
@@ -184,6 +185,16 @@ export async function configuredProviders() {
 
 export function getProviderEnvVarName(providerId) {
   return ENV_VAR_NAMES[providerId];
+}
+
+/** All routable models for a provider, default first. */
+export function getProviderModels(providerId) {
+  const p = PROVIDERS[providerId];
+  if (!p) return [];
+  const cfg = p.ccrProvider();
+  const list = cfg.models?.length ? [...cfg.models] : [p.defaultModel];
+  const dflt = p.defaultModel;
+  return [dflt, ...list.filter(m => m !== dflt)];
 }
 
 export function providerEnvFile(providerId) {
