@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { homedir, platform, sep } from 'node:os';
+import { homedir, platform } from 'node:os';
 import { join, sep as pathSep, relative } from 'node:path';
 import { configuredProviders, PROVIDERS } from './providers.js';
 import { getCooldowns } from './cooldowns.js';
