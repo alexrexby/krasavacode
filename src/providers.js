@@ -31,8 +31,10 @@ export const PROVIDERS = {
     name: 'Cerebras',
     tagline: '14 400 запросов/день + 1M токенов/день, скорость 2600 ток/сек',
     consoleUrl: 'https://cloud.cerebras.ai/?utm_source=krasavacode',
-    keyPattern: /^csk-[A-Za-z0-9]{20,}$/,
-    keyExample: 'csk-…',
+    // Cerebras в 2025 переехали с csk-XXX (alphanumeric) на csk_xxx (с
+    // underscores и dashes в теле). Принимаем оба формата.
+    keyPattern: /^csk[-_][A-Za-z0-9_-]{20,}$/,
+    keyExample: 'csk-… или csk_…',
     keyHowto: [
       'Зарегистрируйся (Sign up) — бесплатно, без карты',
       'В дашборде нажми «API Keys» в левом меню',
@@ -53,9 +55,15 @@ export const PROVIDERS = {
           signal: AbortSignal.timeout(15000),
         });
         if (res.status === 401 || res.status === 403) {
-          return { ok: false, error: 'Ключ не принят. Проверь, что скопировал целиком и аккаунт активирован.' };
+          let detail = '';
+          try { detail = (await res.text()).slice(0, 200); } catch {}
+          return { ok: false, error: `Ключ не принят (HTTP ${res.status})${detail ? ': ' + detail : ''}. Проверь, что аккаунт активирован.` };
         }
-        if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+        if (!res.ok) {
+          let detail = '';
+          try { detail = (await res.text()).slice(0, 200); } catch {}
+          return { ok: false, error: `HTTP ${res.status}${detail ? ': ' + detail : ''}` };
+        }
         const data = await res.json();
         const n = data.data?.length || 0;
         return { ok: true, text: `доступно моделей: ${n}` };
