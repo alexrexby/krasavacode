@@ -166,14 +166,29 @@ export async function launchClaude(paths, hub, opts = {}) {
   } else {
     console.log(line('  Подключённые провайдеры (fallback chain):'));
     let i = 1;
+    let anyCooldown = false;
     for (const id of configured) {
       const p = PROVIDERS[id];
       const cd = cooldowns[id];
-      const onCooldown = cd && new Date(cd).getTime() > Date.now();
-      const tag = onCooldown ? '⏳ на cooldown' : '✓ готов';
+      const cdMs = cd ? new Date(cd).getTime() - Date.now() : 0;
+      const onCooldown = cdMs > 0;
+      let tag;
+      if (onCooldown) {
+        anyCooldown = true;
+        const mins = Math.ceil(cdMs / 60_000);
+        const hrs = Math.floor(mins / 60);
+        const until = new Date(cd).toLocaleTimeString('ru', { hour: '2-digit', minute: '2-digit' });
+        tag = hrs >= 1 ? `⏳ cooldown до ${until} (${hrs}ч)` : `⏳ cooldown ${mins} мин`;
+      } else {
+        tag = '✓ готов';
+      }
       console.log(line(`    ${i++}. ${p.name} — ${tag}`));
     }
     console.log(line(`    ${i}. Pollinations (последний резерв)`));
+    if (anyCooldown) {
+      console.log(line(''));
+      console.log(line('  Сбросить cooldowns: krasavacode reset --cooldowns'));
+    }
   }
   console.log('┗' + '━'.repeat(W - 1) + '┛');
   console.log('');

@@ -138,7 +138,11 @@ function flattenTextBlocks(value) {
   return '';
 }
 
-function cleanForCerebras(parsed) {
+// Анторопиковский payload содержит расширения которых OpenAI-compat API
+// не понимает (cache_control, content-arrays со сложными блоками, reasoning,
+// thinking). Cerebras 400-ит, Polza 400-ит, Groq иногда тоже.
+// Очищаем для всех OpenAI-compat провайдеров.
+function cleanForOpenAICompat(parsed) {
   delete parsed.reasoning;
   delete parsed.thinking;
   delete parsed.metadata;
@@ -155,11 +159,16 @@ function cleanForCerebras(parsed) {
   }
 }
 
+// Список провайдеров с чистым OpenAI-схема — для них стрипаем Anthropic-доп.
+// Gemini и Pollinations отдельные: первый идёт через ccr-transformer 'gemini'
+// который сам конвертирует, второй принимает что угодно.
+const OPENAI_COMPAT_PROVIDERS = new Set(['cerebras', 'groq', 'openrouter', 'nvidia', 'polza']);
+
 function rewriteBodyWithProvider(originalBody, providerId, modelName, debug = false) {
   try {
     const parsed = JSON.parse(originalBody);
     parsed.model = `${providerId},${modelName}`;
-    if (providerId === 'cerebras') cleanForCerebras(parsed);
+    if (OPENAI_COMPAT_PROVIDERS.has(providerId)) cleanForOpenAICompat(parsed);
     const stats = compressPayload(parsed);
     if (debug) {
       const pct = stats.before > 0 ? ((stats.saved / stats.before) * 100).toFixed(1) : '0.0';
@@ -313,10 +322,10 @@ export async function startMetricsProxy(upstreamBaseUrl) {
           // setup. Long cooldown (until tomorrow) so we don't waste retries.
           effectiveReason = 'per-day';
         } else if (code === 400) {
-          // 400 = payload incompatibility (Cerebras strict schema). One hour is
-          // not enough — same payload will fail again. Skip until tomorrow,
-          // student can re-add provider via `krasavacode setup` if needed.
-          effectiveReason = 'incompatible';
+          // 400 = payload incompatibility. После v0.5.35 cleanForOpenAICompat
+          // снимает большинство таких случаев, поэтому хватит per-hour.
+          // Платный провайдер не должен залипать на сутки от одной 400-шибки.
+          effectiveReason = 'per-hour';
         } else if (code === 404) {
           // 404 = "model not found on this provider". Likely model rename
           // (OpenRouter does this often). One hour skip, may recover.

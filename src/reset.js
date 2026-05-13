@@ -43,6 +43,23 @@ function prompt(question) {
 }
 
 export async function runReset() {
+  // `krasavacode reset --cooldowns` — узкая команда: только cooldowns.json,
+  // без подтверждения. Полезно когда провайдер залип после одной 4xx-ошибки.
+  if (process.argv.includes('--cooldowns')) {
+    const cdPath = join(ROOT, 'cooldowns.json');
+    if (await exists(cdPath)) {
+      try {
+        await rm(cdPath, { force: true });
+        console.log('✓ Cooldowns сброшены. Запусти krasavacode заново.');
+      } catch (e) {
+        console.log(`✗ Не удалось удалить ${cdPath}: ${e.message}`);
+      }
+    } else {
+      console.log('Cooldowns и так нет — провайдеры не блокированы.');
+    }
+    return;
+  }
+
   console.log('');
   console.log('  KRASAVACODE — сброс всех настроек');
   console.log('');
