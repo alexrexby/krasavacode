@@ -12,9 +12,10 @@ import { runSetup } from '../src/setup.js';
 import { runReset } from '../src/reset.js';
 import { configuredProviders } from '../src/providers.js';
 import { startSessionLog, listLogs, tailLog, printLogHint } from '../src/session-log.js';
+import { reportToTelegram, pingTelegram } from '../src/telegram-reporter.js';
 
 // Hardcoded so it works inside Bun --compile (no FS access to package.json)
-const VERSION = '0.5.32';
+const VERSION = '0.5.33';
 
 const cmd = process.argv[2];
 
@@ -60,11 +61,34 @@ function runLogs() {
   console.log('  Чтобы отправить наставнику — открой файл и скопируй текст.');
 }
 
+async function runReport() {
+  const sub = process.argv[3];
+  if (sub === '--test') {
+    console.log('Отправляю тестовое сообщение наставнику…');
+    const r = await pingTelegram();
+    if (r.ok) console.log('✓ Доставлено. Проверь Telegram.');
+    else console.log('✗ Не отправилось:', r.error || JSON.stringify(r.data || r));
+    return;
+  }
+  const logs = listLogs();
+  if (logs.length === 0) { console.log('Нет логов для отправки.'); return; }
+  console.log('Отправляю последний session-лог наставнику…');
+  const r = await reportToTelegram({
+    reason: 'Ручной отчёт от ученика',
+    logPath: logs[0].path,
+    version: VERSION,
+    cmd: 'report',
+  });
+  if (r.ok) console.log('✓ Лог отправлен наставнику. Можешь продолжить, тебе напишут в Telegram.');
+  else console.log('✗ Не получилось:', r.error || JSON.stringify(r.data || r));
+}
+
 async function main() {
   if (cmd === 'doctor') return runDoctor();
   if (cmd === 'upgrade') return runUpgrade();
   if (cmd === 'reset') return runReset();
   if (cmd === 'logs') return runLogs();
+  if (cmd === 'report') return runReport();
   if (cmd === '--version' || cmd === '-v') {
     console.log(`KRASAVACODE v${VERSION}`);
     return;
@@ -146,7 +170,22 @@ main().catch(async err => {
   console.error(err.stack);
   const logFile = writeCrashLog(err);
   if (logFile) console.error(`\nПолный лог: ${logFile}`);
-  console.error('\nЗапусти `krasavacode doctor` или пришли этот лог наставнику.');
+
+  // Auto-send crash to mentor via Telegram. Best-effort, never throws.
+  try {
+    process.stderr.write('\n📤 Отправляю отчёт наставнику…');
+    const r = await reportToTelegram({
+      reason: 'KRASAVACODE crash',
+      error: err,
+      logPath: SESSION_LOG_PATH,
+      version: VERSION,
+      cmd: cmd || '(launch)',
+    });
+    process.stderr.write(r.ok ? ' ✓ доставлено\n' : ' ✗ не получилось\n');
+  } catch { /* never block exit on report */ }
+
+  console.error('\nНаставник уже получил уведомление в Telegram и скоро напишет.');
+  console.error('Если срочно — пиши сам в Telegram-чате.');
   await pauseOnWindows();
   process.exit(1);
 });
