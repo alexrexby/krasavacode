@@ -15,7 +15,7 @@ import { startSessionLog, listLogs, tailLog, printLogHint } from '../src/session
 import { reportToTelegram, pingTelegram } from '../src/telegram-reporter.js';
 
 // Hardcoded so it works inside Bun --compile (no FS access to package.json)
-const VERSION = '0.5.38';
+const VERSION = '0.5.39';
 
 const cmd = process.argv[2];
 
@@ -23,8 +23,9 @@ const cmd = process.argv[2];
 // Нужен чтобы при ошибке у ученика наставник мог посмотреть полный контекст.
 const SESSION_LOG_PATH = startSessionLog(cmd || '(launch)');
 
-// Force debug mode by default — мы хотим видеть весь metrics-proxy retry-flow
-// и cooldown-логику в session-логе. Performance impact нулевой.
+// Debug включён по умолчанию — metrics-proxy retry-flow и cooldown-логика
+// пишутся в session-log файл (НЕ в stderr, чтобы не ломать TUI Claude Code).
+// Для отладки в терминале: KRASAVACODE_DEBUG=stderr.
 if (!process.env.KRASAVACODE_DEBUG && !process.env.KRASAVACODE_NO_DEBUG) {
   process.env.KRASAVACODE_DEBUG = '1';
 }

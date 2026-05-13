@@ -91,6 +91,15 @@ export function startSessionLog(cmdLabel = '') {
 
 export function getLogPath() { return logPath; }
 
+/** Write a line directly to the session log file, bypassing stderr.
+ *  Used for debug output that should be captured but not pollute the TUI. */
+export function writeToSessionLog(line) {
+  if (!logStream) return;
+  try {
+    logStream.write(line.endsWith('\n') ? line : line + '\n');
+  } catch {}
+}
+
 export function printLogHint() {
   if (!logPath) return;
   console.error(`📝 Сессия пишется в: ${logPath}`);

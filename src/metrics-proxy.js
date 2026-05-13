@@ -6,6 +6,21 @@ import { homedir } from 'node:os';
 import { configuredProviders, PROVIDERS, PROVIDER_PRIORITY, getProviderModels } from './providers.js';
 import { setCooldown, getCooldowns, cooldownUntil } from './cooldowns.js';
 import { compressPayload } from './compression.js';
+import { writeToSessionLog } from './session-log.js';
+
+// Debug output destination:
+//   KRASAVACODE_DEBUG=stderr → console.error (видно в терминале — ломает TUI Claude Code)
+//   KRASAVACODE_DEBUG=1      → пишем только в session-log файл (по умолчанию)
+//   no env / KRASAVACODE_DEBUG=0 → ничего
+function dlog(msg) {
+  const mode = process.env.KRASAVACODE_DEBUG;
+  if (!mode || mode === '0') return;
+  if (mode === 'stderr') {
+    console.error(msg);
+  } else {
+    writeToSessionLog(msg);
+  }
+}
 
 const ROOT = join(homedir(), '.krasavacode');
 const USAGE_FILE = join(ROOT, 'usage.json');
@@ -167,16 +182,14 @@ function cleanForOpenAICompat(parsed) {
 // который сам конвертирует Anthropic ↔ OpenAI, ему не нужно.
 const OPENAI_COMPAT_PROVIDERS = new Set(['polza']);
 
-function rewriteBodyWithProvider(originalBody, providerId, modelName, debug = false) {
+function rewriteBodyWithProvider(originalBody, providerId, modelName) {
   try {
     const parsed = JSON.parse(originalBody);
     parsed.model = `${providerId},${modelName}`;
     if (OPENAI_COMPAT_PROVIDERS.has(providerId)) cleanForOpenAICompat(parsed);
     const stats = compressPayload(parsed);
-    if (debug) {
-      const pct = stats.before > 0 ? ((stats.saved / stats.before) * 100).toFixed(1) : '0.0';
-      console.error(`[compress] ${providerId}: -${stats.saved}b (${pct}%) — ${stats.before}→${stats.after}`);
-    }
+    const pct = stats.before > 0 ? ((stats.saved / stats.before) * 100).toFixed(1) : '0.0';
+    dlog(`[compress] ${providerId}: -${stats.saved}b (${pct}%) — ${stats.before}→${stats.after}`);
     return Buffer.from(JSON.stringify(parsed));
   } catch {
     return originalBody;
@@ -205,13 +218,12 @@ function forward(upstream, method, path, headers, bodyBuffer) {
 export async function startMetricsProxy(upstreamBaseUrl) {
   const upstream = new URL(upstreamBaseUrl);
   const port = await getFreePort();
-  const debug = process.env.KRASAVACODE_DEBUG === '1';
 
   const server = http.createServer(async (req, res) => {
     const path = (req.url || '').split('?')[0];
     const isMessages = req.method === 'POST' && path === '/v1/messages';
     const isModelList = req.method === 'GET' && path === '/v1/models';
-    if (debug) console.error(`[metrics] ${req.method} ${req.url}`);
+    dlog(`[metrics] ${req.method} ${req.url}`);
 
     // Claude Code v2.1+ asks GET /v1/models BEFORE sending any request,
     // and refuses models that aren't in the response. Our upstream (ccr → provider)
@@ -265,7 +277,7 @@ export async function startMetricsProxy(upstreamBaseUrl) {
         // All providers on cooldown (and нет неопробованных моделей)? Ждём до 30s
         // пока самый ранний cooldown не отпустит.
         if (!choice) {
-          if (debug) console.error('[metrics] all on cooldown — wait up to 30s');
+          dlog('[metrics] all on cooldown — wait up to 30s');
           const deadline = Date.now() + 30_000;
           while (Date.now() < deadline) {
             await new Promise(r => setTimeout(r, 2000));
@@ -274,14 +286,14 @@ export async function startMetricsProxy(upstreamBaseUrl) {
           }
         }
         if (!choice) {
-          if (debug) console.error('[metrics] no available (provider,model) pairs after 30s wait');
+          dlog('[metrics] no available (provider,model) pairs after 30s wait');
           res.writeHead(429, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify(FRIENDLY_429()));
           return;
         }
 
-        const rewrittenBody = rewriteBodyWithProvider(originalBody, choice.id, choice.model, debug);
-        if (debug) console.error(`[metrics] attempt ${attempt}: routing to ${choice.id},${choice.model}`);
+        const rewrittenBody = rewriteBodyWithProvider(originalBody, choice.id, choice.model);
+        dlog(`[metrics] attempt ${attempt}: routing to ${choice.id},${choice.model}`);
 
         let upRes;
         try {
@@ -292,7 +304,7 @@ export async function startMetricsProxy(upstreamBaseUrl) {
           return;
         }
 
-        if (debug) console.error(`[metrics] attempt ${attempt}/${maxAttempts} → ${upRes.statusCode} (${choice.id},${choice.model})`);
+        dlog(`[metrics] attempt ${attempt}/${maxAttempts} → ${upRes.statusCode} (${choice.id},${choice.model})`);
 
         // 4xx provider failures → mark cooldown and retry next provider.
         // We retry on:
@@ -319,7 +331,7 @@ export async function startMetricsProxy(upstreamBaseUrl) {
         upRes.on('data', d => errChunks.push(d));
         await new Promise(r => upRes.on('end', r));
         const upBody = Buffer.concat(errChunks).toString('utf8');
-        if (debug) console.error(`[metrics] ${upRes.statusCode} from ${choice.id}: ${upBody.slice(0, 200)}`);
+        dlog(`[metrics] ${upRes.statusCode} from ${choice.id}: ${upBody.slice(0, 200)}`);
 
         // Помечаем (provider,model) как опробованные — в этом запросе мы к ним
         // больше не вернёмся, даже если cooldown не ставим.
@@ -328,7 +340,7 @@ export async function startMetricsProxy(upstreamBaseUrl) {
         // 400 + tool-incompatibility = проблема КОНКРЕТНОЙ модели, не провайдера.
         // Не cooldown'им провайдер, просто пробуем следующую модель из его списка.
         if (code === 404 || (code === 400 && isToolIncompatibility(upBody))) {
-          if (debug) console.error(`[metrics] model-level error (${code}) on ${choice.id},${choice.model} — try next model on same provider`);
+          dlog(`[metrics] model-level error (${code}) on ${choice.id},${choice.model} — try next model on same provider`);
           continue;
         }
 

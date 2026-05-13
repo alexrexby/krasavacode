@@ -3,6 +3,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { CCR_PORT } from './preset.js';
 import { configuredProviders, loadProviderKey, getProviderEnvVarName } from './providers.js';
 import { startMetricsProxy } from './metrics-proxy.js';
+import { writeToSessionLog } from './session-log.js';
 
 const HOST = '127.0.0.1';
 const PORT = CCR_PORT;
@@ -61,23 +62,24 @@ export async function startHub(paths) {
     if (key) ccrEnv[getProviderEnvVarName(id)] = key;
   }
 
+  // stdio:
+  //   KRASAVACODE_DEBUG=stderr  → 'inherit' (для разработчика, ломает TUI)
+  //   иначе                     → 'pipe' и tee в session-log (видно через `krasavacode logs --tail`)
   const child = spawn(paths.ccrBin, ['start'], {
-    stdio: process.env.KRASAVACODE_DEBUG ? 'inherit' : 'pipe',
+    stdio: process.env.KRASAVACODE_DEBUG === 'stderr' ? 'inherit' : 'pipe',
     detached: false,
     env: ccrEnv,
   });
 
   let stderrTail = '';
-  if (child.stderr) {
-    child.stderr.on('data', d => {
-      stderrTail = (stderrTail + d.toString()).slice(-2000);
-    });
-  }
-  if (child.stdout) {
-    child.stdout.on('data', d => {
-      stderrTail = (stderrTail + d.toString()).slice(-2000);
-    });
-  }
+  const teeLine = (chunk) => {
+    const text = chunk.toString();
+    stderrTail = (stderrTail + text).slice(-2000);
+    // Дублируем в session-log (через прямую запись в файл, не stderr).
+    try { writeToSessionLog(`[ccr] ${text.trimEnd()}`); } catch {}
+  };
+  if (child.stderr) child.stderr.on('data', teeLine);
+  if (child.stdout) child.stdout.on('data', teeLine);
 
   let exitedEarly = false;
   child.once('exit', code => {
