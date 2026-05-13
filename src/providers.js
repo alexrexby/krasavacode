@@ -94,7 +94,7 @@ export const PROVIDERS = {
       'Скопируй ключ',
     ],
     quota: 'Платный (100₽ ≈ 1000+ запросов на дешёвых моделях)',
-    bestModel: 'DeepSeek V4 Flash / Qwen 3.5 Flash (1M контекст, ✓ tool use)',
+    bestModel: 'GLM 4.7 Flash (стабильный tool use, 200k ctx)',
     rpd: null,
     tpd: null,
     rpm: 60,
@@ -136,20 +136,32 @@ export const PROVIDERS = {
       // ВАЖНО: Claude Code требует tool use на КАЖДОМ запросе. Reasoning-only
       // модели (DeepSeek R1 distill и т.п.) сюда добавлять НЕЛЬЗЯ — Polza
       // ответит 400 "No endpoints found that support tool use".
-      //   deepseek/deepseek-v4-flash             12.85₽/1M  ctx=1M    ✓ tools  (default)
+      //
+      //   z-ai/glm-4.7-flash                      6.34₽/1M  ctx=200k  ✓ tools  (default)
+      //   deepseek/deepseek-v4-flash             12.85₽/1M  ctx=1M    ✓ tools  (fallback)
       //   qwen/qwen3.5-flash-02-23                5.88₽/1M  ctx=1M    ✓ tools  (cheap fallback)
-      //   z-ai/glm-4.7-flash                      6.34₽/1M  ctx=200k  ✓ tools
-      // qwen/qwen-2.5-coder-32b-instruct убран: на Polza endpoint этой модели
-      // не поддерживает tool use (проверено 2026-05-13, ответ 400 "No endpoints
-      // found that support tool use"). Несмотря на дешёвую цену 2.72₽/1M — для
-      // Claude Code не годится.
+      //
+      // GLM 4.7 Flash дефолтом: проверено 2026-05-13 живым shootout'ом — это
+      // единственная модель из доступных на Polza, которая:
+      //   (а) выдаёт обязательную преамбулу 🔧 перед tool_use,
+      //   (б) корректно ЗАВЕРШАЕТ turn блоком «▶ Как посмотреть результат»
+      //       после tool_result (Qwen/V4 Flash зацикливаются на следующих
+      //       Write'ах вместо stop'а — Claude Code висит),
+      //   (в) не галлюцинирует tool-server ошибки типа «Dependencies not
+      //       installed for server bash» / «Pausing - waiting for bash server»
+      //       (DeepSeek V4 Flash на Polza воспроизводимо генерит это в текст).
+      // DeepSeek V4 Pro исключён: возвращает большие JSON-ответы с
+      // незакрытыми строками (parse error на клиенте).
+      // qwen/qwen-2.5-coder-32b-instruct исключён: на Polza endpoint этой
+      // модели не поддерживает tool use (400 «No endpoints found that
+      // support tool use»).
       models: [
+        'z-ai/glm-4.7-flash',
         'deepseek/deepseek-v4-flash',
         'qwen/qwen3.5-flash-02-23',
-        'z-ai/glm-4.7-flash',
       ],
     }),
-    defaultModel: 'deepseek/deepseek-v4-flash',
+    defaultModel: 'z-ai/glm-4.7-flash',
   },
 };
 
