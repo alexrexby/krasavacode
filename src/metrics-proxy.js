@@ -138,6 +138,69 @@ const FRIENDLY_429 = () => ({
 });
 
 /**
+ * Loop-guard: некоторые модели (GLM 4.7 Flash, DeepSeek V4 Flash) в agentic
+ * loop'е могут зависнуть, повторяя один и тот же tool_use 10+ раз подряд.
+ * Сжигают токены, висят 30+ минут, ученик не понимает что делать.
+ *
+ * Если в текущем запросе ПОСЛЕДНИЕ N assistant turn'ов имеют одинаковый
+ * tool_use (name + input) — обрываем цикл, возвращая fake Claude-style
+ * ответ с stop_reason='end_turn' и инструкцией ученику.
+ */
+const LOOP_THRESHOLD = 3; // три повтора подряд → стоп
+
+function detectLoop(parsedBody) {
+  const messages = parsedBody?.messages;
+  if (!Array.isArray(messages)) return null;
+  const sigs = [];
+  for (const m of messages) {
+    if (m.role !== 'assistant') continue;
+    const blocks = Array.isArray(m.content) ? m.content : [];
+    const toolUses = blocks.filter(b => b?.type === 'tool_use');
+    if (toolUses.length === 0) continue;
+    // Сигнатура turn'а — упорядоченный список (name, hash(input))
+    const sig = toolUses.map(tu => {
+      let inputStr = '';
+      try { inputStr = JSON.stringify(tu.input || {}); } catch {}
+      return `${tu.name}:${inputStr.slice(0, 500)}`;
+    }).join('|');
+    sigs.push(sig);
+  }
+  if (sigs.length < LOOP_THRESHOLD) return null;
+  const lastN = sigs.slice(-LOOP_THRESHOLD);
+  if (lastN.every(s => s === lastN[0])) {
+    // Достаём первое имя tool'а для понятного сообщения
+    const firstTool = lastN[0].split(':')[0] || 'инструмент';
+    return firstTool;
+  }
+  return null;
+}
+
+function loopStopResponse(toolName) {
+  return {
+    id: `msg_loop_${Date.now()}`,
+    type: 'message',
+    role: 'assistant',
+    model: 'krasavacode-loop-guard',
+    content: [{
+      type: 'text',
+      text:
+        `⚠️ Модель зациклилась — повторяет ${toolName} раз за разом.\n\n` +
+        `Что делать:\n` +
+        `  1. Нажми Ctrl+C чтобы остановить.\n` +
+        `  2. Перезапусти: krasavacode\n` +
+        `  3. Сформулируй задачу более конкретно. Например:\n` +
+        `     вместо «сделай калькулятор»\n` +
+        `     попробуй «создай один файл index.html с формой:\n` +
+        `     поле для площади, кнопка "посчитать", вывод стоимости»\n\n` +
+        `Чем конкретнее задача — тем меньше модель путается.`,
+    }],
+    stop_reason: 'end_turn',
+    stop_sequence: null,
+    usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0 },
+  };
+}
+
+/**
  * Strict OpenAI-compat providers (Polza) reject Anthropic-style payloads:
  *   - content as array of text blocks → must be plain string
  *   - cache_control on any block → unknown property
@@ -258,6 +321,20 @@ export async function startMetricsProxy(upstreamBaseUrl) {
         }
         return;
       }
+
+      // Loop-guard: до выбора провайдера парсим тело и смотрим не повторяет
+      // ли модель один и тот же tool_use 3+ раз подряд. Если да — обрываем
+      // цикл, не идём в апстрим. Spares the user from 1h+ burn loops.
+      try {
+        const parsed = JSON.parse(originalBody.toString('utf8'));
+        const loopTool = detectLoop(parsed);
+        if (loopTool) {
+          dlog(`[metrics] LOOP GUARD: ${loopTool} повторился ${LOOP_THRESHOLD}+ раз — обрываю`);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(loopStopResponse(loopTool)));
+          return;
+        }
+      } catch {} // если тело не парсится — идём дальше, апстрим разберётся
 
       // /v1/messages: provider+model selection with retry-on-failure.
       // tried: Map<providerId, Set<modelName>> — модели уже попробованные в
