@@ -60,3 +60,13 @@ echo.
 echo   Press any key to open the connection window in browser.
 pause >nul
 "%BIN_PATH%" setup
+echo.
+if %ERRORLEVEL% NEQ 0 (
+  echo.
+  echo   X krasavacode crashed. Crash log: %USERPROFILE%\.krasavacode\last-crash.log
+  echo   Run "krasavacode doctor" or send the log to your mentor.
+) else (
+  echo   + Session finished. To start again, double-click VIBECODE on Desktop.
+)
+echo.
+pause

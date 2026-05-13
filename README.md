@@ -59,11 +59,13 @@ curl -fsSL https://is.gd/1fPP9O | bash
 **Шаг 2.** Скопируй ровно эту строку и вставь (правая кнопка мыши = вставить в PowerShell):
 
 ```
-iwr https://is.gd/tOzD8g -useb | iex
+[Net.ServicePointManager]::SecurityProtocol='Tls12'; iwr https://is.gd/tOzD8g -useb | iex
 ```
 
 Нажми Enter.
 
+> 💡 `Tls12` нужен потому что старый PowerShell по умолчанию использует устаревший TLS 1.0 и многие сайты его не принимают. Если не вставить эту часть — будет ошибка «Базовое соединение закрыто».
+>
 > 💡 Если PowerShell скажет «Запуск сценариев отключён в этой системе» — выполни сначала эту команду, потом снова попробуй: `Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy Bypass`
 
 **Шаг 3.** Жди минуту — само скачается. Когда увидишь «+ Готово!» — на Рабочем столе появится значок **«ВАЙБКОДИНГ»**.

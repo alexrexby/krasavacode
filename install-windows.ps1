@@ -1,7 +1,9 @@
 # KRASAVACODE - Windows installer (PowerShell)
-# Run: powershell -ExecutionPolicy Bypass -Command "iwr https://is.gd/<short> -useb | iex"
+# Run: powershell -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol='Tls12'; iwr https://is.gd/<short> -useb | iex"
 
 $ErrorActionPreference = 'Stop'
+# PowerShell 5.1 defaults to TLS 1.0/1.1 → modern hosts reject it. Force TLS 1.2.
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
 Write-Host ""
