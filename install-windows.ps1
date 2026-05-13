@@ -1,4 +1,4 @@
-# KRASAVACODE - Windows installer (PowerShell)
+﻿# KRASAVACODE - Windows installer (PowerShell)
 # Run: powershell -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol='Tls12'; iwr https://is.gd/<short> -useb | iex"
 
 $ErrorActionPreference = 'Stop'
@@ -56,17 +56,27 @@ Write-Host ""
 Write-Host "  На Рабочем столе появился значок «ВАЙБКОДИНГ»."
 Write-Host ""
 Write-Host "  ============================================="
-Write-Host "  СЛЕДУЮЩИЙ ШАГ — подключаем бесплатные ИИ"
+Write-Host "  СЛЕДУЮЩИЙ ШАГ — подключаем AI-провайдер"
 Write-Host "  ============================================="
 Write-Host ""
-Write-Host "  По умолчанию работает простая модель."
-Write-Host "  Подключи Polza.ai (~100₽ через карту РФ, без VPN)"
-Write-Host "  или OpenRouter (бесплатно, но нужен VPN)."
-Write-Host "  Всё бесплатно, без карты, занимает ~1 минуту."
+Write-Host "  Polza.ai — российский, оплата картой РФ, без VPN (~100₽ хватает надолго)."
+Write-Host "  Или OpenRouter — бесплатный, но нужен VPN (50 запросов/день)."
 Write-Host ""
-Write-Host "  Запускаю окно подключения в браузере..."
+Write-Host "  Сейчас в браузере откроется окно подключения."
+Write-Host "  Не закрывай это окно PowerShell — оно нужно после настройки!"
 Write-Host ""
+Start-Sleep -Seconds 2
 
-# Запускаем krasavacode setup в новом окне cmd, чтобы пользователь
-# видел прогресс и не потерял окно установщика.
-Start-Process -FilePath "cmd.exe" -ArgumentList "/k", "`"$binPath`" setup"
+# Запускаем setup прямо в этом окне (не в новом!) — чтобы ученик не путался
+# между окнами установщика и приложения.
+& $binPath setup
+
+Write-Host ""
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  X krasavacode упал. Лог: $env:USERPROFILE\.krasavacode\last-crash.log"
+    Write-Host "  Запусти 'krasavacode doctor' или отправь лог наставнику."
+} else {
+    Write-Host "  + Сессия завершена. Чтобы начать заново — дабл-клик по ВАЙБКОДИНГ на Рабочем столе."
+}
+Write-Host ""
+Read-Host "  Нажми Enter чтобы закрыть это окно"
