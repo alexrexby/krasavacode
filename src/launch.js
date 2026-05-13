@@ -152,14 +152,19 @@ export async function launchClaude(paths, hub, opts = {}) {
   };
   console.log('');
   console.log('┏' + '━'.repeat(W - 1) + '┓');
-  console.log(line('  K R A S A V A C O D E'));
-  console.log(line('  Бесплатный вайбкодинг через локальный hub'));
+  console.log(line('  ✍️  ПИШИ СВОЮ ЗАДАЧУ ЗДЕСЬ — В ЭТО ОКНО'));
+  console.log(line(''));
+  console.log(line('  Не в браузере! Браузер можно закрыть.'));
+  console.log(line('  Сейчас откроется чат с AI — будет строка'));
+  console.log(line('  ввода прямо тут. Пиши обычным языком.'));
+  console.log(line(''));
+  console.log(line('  Пример: «Сделай игру тетрис на html»'));
   console.log('┣' + '━'.repeat(W - 1) + '┫');
   if (configured.length === 0) {
     console.log(line('  Pollinations (gpt-oss-20b) — простая модель'));
     console.log(line('  Чтобы поднять качество: krasavacode setup'));
   } else {
-    console.log(line('  Активная цепочка фолбэков:'));
+    console.log(line('  Подключённые провайдеры (fallback chain):'));
     let i = 1;
     for (const id of configured) {
       const p = PROVIDERS[id];
@@ -169,12 +174,8 @@ export async function launchClaude(paths, hub, opts = {}) {
       console.log(line(`    ${i++}. ${p.name} — ${tag}`));
     }
     console.log(line(`    ${i}. Pollinations (последний резерв)`));
-    console.log(line('  При 429 — автоматически прыгает на следующий'));
   }
   console.log('┗' + '━'.repeat(W - 1) + '┛');
-  console.log('');
-  console.log('  Дальше открывается Claude Code от Anthropic — это');
-  console.log('  его экран приветствия, не наш. Просто пиши задачу.');
   console.log('');
 
   // Merge env from runtime (PATH with bundled Node when applicable) with our overrides
@@ -188,6 +189,23 @@ export async function launchClaude(paths, hub, opts = {}) {
     });
 
     child.on('error', reject);
-    child.on('exit', () => resolve());
+    child.on('exit', async () => {
+      // On Windows the parent .bat will close the cmd window immediately after
+      // claude exits — the student loses their work output and any error msg.
+      // Hold the window open until they press a key.
+      if (platform() === 'win32' && process.stdin.isTTY) {
+        console.log('');
+        console.log('═'.repeat(60));
+        console.log('  Сессия завершена. Чтобы начать заново — дабл-клик');
+        console.log('  по значку VIBECODE на Рабочем столе.');
+        console.log('═'.repeat(60));
+        process.stderr.write('\nНажми Enter чтобы закрыть это окно...');
+        await new Promise(res => {
+          process.stdin.once('data', () => res());
+          process.stdin.resume();
+        }).catch(() => {});
+      }
+      resolve();
+    });
   });
 }

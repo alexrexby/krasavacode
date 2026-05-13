@@ -267,8 +267,19 @@ function html(token) {
   .msg.ok { background:#effaf3; color:#1a7f4d; border:1px solid #b8e6c9; }
   .msg.ok strong { display:block; font-size:16px; margin-bottom:4px; }
   .footer { margin-top:24px; font-size:13px; color:#8b8b94; text-align:center; }
-  .footer .done-btn { display:inline-block; margin-top:8px; padding:10px 22px; background:#1a7f4d; color:#fff;
-                      text-decoration:none; border-radius:10px; font-weight:600; }
+  .footer .done-btn { display:inline-block; margin-top:8px; padding:18px 32px; background:#cccccc; color:#fff;
+                      text-decoration:none; border-radius:14px; font-weight:700; font-size:17px;
+                      pointer-events:none; transition:all .2s; }
+  .footer .done-btn.ready { background:#1a7f4d; pointer-events:auto;
+                            box-shadow:0 6px 20px rgba(26,127,77,.4);
+                            animation: pulse 2s ease-in-out infinite; }
+  .footer .done-btn.ready:hover { background:#16703f; transform:translateY(-2px); }
+  @keyframes pulse { 0%,100% { transform:scale(1); } 50% { transform:scale(1.03); } }
+  .ready-hint { display:none; margin:20px 0 12px; padding:18px 22px; border-radius:14px;
+                background:#fff8db; border:2px solid #ffd866; color:#5a4500;
+                font-size:15px; font-weight:500; text-align:center; }
+  .ready-hint.show { display:block; }
+  .ready-hint b { color:#1a7f4d; }
   @media (prefers-color-scheme:dark) {
     body { background:linear-gradient(180deg,#1a1a1f 0%,#0f0f12 100%); color:#f0f0f5; }
     .card { background:#232328; box-shadow:0 20px 60px rgba(0,0,0,.4); }
@@ -291,14 +302,19 @@ function html(token) {
 <body>
   <div class="card">
     <h1>Подключаем AI-провайдеры</h1>
-    <p class="sub">Любые из этих трёх дают бесплатный вайбкодинг. Чем больше подключишь — тем устойчивее (если один упрётся в лимит, переключится на следующий).</p>
+    <p class="sub"><b>Минимум — один провайдер</b>, для начала достаточно. Рекомендуем Cerebras (самая большая бесплатная квота). Можно подключить несколько — тогда, если один упрётся в лимит, чейн сам переключится на следующий.</p>
 
     <div class="tabs" role="tablist">${tabs}</div>
     ${cards}
 
+    <div class="ready-hint" id="ready-hint">
+      ✅ <b>Минимум подключён!</b> Можешь подключить ещё провайдеры для надёжности — или сразу нажать большую зелёную кнопку внизу ↓
+    </div>
+
     <div class="footer">
       <p>Ключи хранятся только у тебя в <code>~/.krasavacode/keys/</code> с chmod 600. Ничего не отправляется кроме одного тестового запроса в каждый сервис.</p>
-      <p style="margin-top:18px;"><a href="#" class="done-btn" data-action="done">Готово, запустить вайбкодинг</a></p>
+      <p style="margin-top:18px;"><a href="#" class="done-btn" data-action="done" id="done-btn">🚀 Запустить вайбкодинг</a></p>
+      <p id="done-hint" style="margin-top:10px;font-size:12px;color:#8b8b94;">Кнопка станет зелёной, когда подключишь хотя бы один провайдер</p>
     </div>
   </div>
 
@@ -346,6 +362,13 @@ async function refreshStatus() {
       s.classList.remove('ok','fail');
       if (data.configured.includes(id)) s.classList.add('ok');
     });
+    const hasAny = (data.configured || []).length > 0;
+    const doneBtn = document.getElementById('done-btn');
+    const doneHint = document.getElementById('done-hint');
+    const readyHint = document.getElementById('ready-hint');
+    if (doneBtn) doneBtn.classList.toggle('ready', hasAny);
+    if (doneHint) doneHint.style.display = hasAny ? 'none' : '';
+    if (readyHint) readyHint.classList.toggle('show', hasAny);
   } catch {}
 }
 refreshStatus();

@@ -57,8 +57,8 @@ echo   Default model is weak. Connect Cerebras (14k req/day) -
 echo   that is the main one. Groq and Gemini optional.
 echo   All free, no card, takes about 1 minute.
 echo.
-echo   Press any key to open the connection window in browser.
-pause >nul
+echo   Opening connection window in 3 seconds (no clicking needed)...
+timeout /t 3 /nobreak >nul
 "%BIN_PATH%" setup
 echo.
 if %ERRORLEVEL% NEQ 0 (
