@@ -193,11 +193,18 @@ function html(token) {
   const cards = PROVIDER_PRIORITY.map(id => {
     const p = PROVIDERS[id];
     const steps = p.keyHowto.map((s, i) => `<li>${s}</li>`).join('');
+    let geoBanner = '';
+    if (p.geoBlocked) {
+      geoBanner = `<div class="geo-warn">⚠️ <b>${p.geoNote}</b><br>Если ты из РФ/Беларуси — пропусти этот провайдер и подключи <b>Google Gemini</b> (вкладка справа). При попытке вернёт «ключ не принят», даже если ключ правильный.</div>`;
+    } else if (p.worksInRu) {
+      geoBanner = `<div class="geo-ok">${p.geoNote}</div>`;
+    }
     return `
     <section class="tab-content" data-tab="${id}" hidden>
       <div class="hero">
         <h2>${p.name}</h2>
         <p class="tagline">${p.tagline}</p>
+        ${geoBanner}
         <ul class="quota">
           <li><b>Квота:</b> ${p.quota}</li>
           <li><b>Лучшая модель:</b> ${p.bestModel}</li>
@@ -219,7 +226,8 @@ function html(token) {
 
   const tabs = PROVIDER_PRIORITY.map((id, i) => {
     const p = PROVIDERS[id];
-    return `<button class="tab" data-tab-button="${id}"${i === 0 ? ' aria-current="true"' : ''}>${p.name} <span class="tab-status" data-provider-status="${id}"></span></button>`;
+    const geoIcon = p.geoBlocked ? ' 🚫' : (p.worksInRu ? ' 🇷🇺' : '');
+    return `<button class="tab" data-tab-button="${id}"${i === 0 ? ' aria-current="true"' : ''}>${p.name}${geoIcon} <span class="tab-status" data-provider-status="${id}"></span></button>`;
   }).join('');
 
   return `<!doctype html>
@@ -280,6 +288,15 @@ function html(token) {
                 font-size:15px; font-weight:500; text-align:center; }
   .ready-hint.show { display:block; }
   .ready-hint b { color:#1a7f4d; }
+  .geo-warn { margin:0 0 14px; padding:12px 14px; border-radius:10px;
+              background:#fff1f0; border:1.5px solid #ffb8b0; color:#8a1a10; font-size:13.5px; line-height:1.5; }
+  .geo-warn b { color:#b00020; }
+  .geo-ok { margin:0 0 14px; padding:8px 12px; border-radius:10px;
+            background:#effaf3; border:1px solid #b8e6c9; color:#1a7f4d; font-size:13px; font-weight:500; }
+  .ru-banner { margin:0 0 20px; padding:14px 18px; border-radius:12px;
+               background:#fffaeb; border:2px solid #ffd866; color:#5a4500;
+               font-size:14px; line-height:1.5; }
+  .ru-banner b { color:#1d1d1f; }
   @media (prefers-color-scheme:dark) {
     body { background:linear-gradient(180deg,#1a1a1f 0%,#0f0f12 100%); color:#f0f0f5; }
     .card { background:#232328; box-shadow:0 20px 60px rgba(0,0,0,.4); }
@@ -302,7 +319,10 @@ function html(token) {
 <body>
   <div class="card">
     <h1>Подключаем AI-провайдеры</h1>
-    <p class="sub"><b>Минимум — один провайдер</b>, для начала достаточно. Рекомендуем Cerebras (самая большая бесплатная квота). Можно подключить несколько — тогда, если один упрётся в лимит, чейн сам переключится на следующий.</p>
+    <p class="sub"><b>Минимум — один провайдер</b>, для начала достаточно. Можно подключить несколько — тогда, если один упрётся в лимит, чейн сам переключится на следующий.</p>
+    <div class="ru-banner">
+      📍 <b>Если ты из России или Беларуси</b> — подключай <b>🇷🇺 Google Gemini</b> или <b>🇷🇺 Polza.ai</b>. Провайдеры с 🚫 (Cerebras, Groq, NVIDIA) блокируют запросы по IP и вернут «ключ не принят», даже если ключ правильный. Для них нужен VPN.
+    </div>
 
     <div class="tabs" role="tablist">${tabs}</div>
     ${cards}

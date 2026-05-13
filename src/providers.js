@@ -30,6 +30,8 @@ export const PROVIDERS = {
     id: 'cerebras',
     name: 'Cerebras',
     tagline: '14 400 запросов/день + 1M токенов/день, скорость 2600 ток/сек',
+    geoBlocked: true, // Cerebras блокирует RU/BY/CU/KP/IR — возвращает 401
+    geoNote: 'Не работает из России без VPN (вернёт «ключ не принят», даже если ключ правильный)',
     consoleUrl: 'https://cloud.cerebras.ai/?utm_source=krasavacode',
     // Cerebras в 2025 переехали с csk-XXX (alphanumeric) на csk_xxx (с
     // underscores и dashes в теле). Принимаем оба формата.
@@ -56,9 +58,7 @@ export const PROVIDERS = {
           signal: AbortSignal.timeout(15000),
         });
         if (res.status === 401 || res.status === 403) {
-          let detail = '';
-          try { detail = (await res.text()).slice(0, 200); } catch {}
-          return { ok: false, error: `Ключ не принят (HTTP ${res.status})${detail ? ': ' + detail : ''}. Проверь, что аккаунт активирован.` };
+          return { ok: false, error: 'Cerebras отверг запрос (HTTP ' + res.status + '). Скорее всего geo-блок: ты из РФ/Беларуси. Подключи Google Gemini или включи VPN. Если ты не из РФ — проверь, что аккаунт активирован.' };
         }
         if (!res.ok) {
           let detail = '';
@@ -87,6 +87,8 @@ export const PROVIDERS = {
     id: 'groq',
     name: 'Groq',
     tagline: '1000 запросов/день, GPT-OSS 120B + DeepSeek-R1',
+    geoBlocked: true, // Groq блокирует RU/BY/CU/KP/IR
+    geoNote: 'Не работает из России без VPN (вернёт «ключ не принят», даже если ключ правильный)',
     consoleUrl: 'https://console.groq.com/keys',
     keyPattern: /^gsk_[A-Za-z0-9]{40,}$/,
     keyExample: 'gsk_…',
@@ -109,7 +111,7 @@ export const PROVIDERS = {
           signal: AbortSignal.timeout(15000),
         });
         if (res.status === 401 || res.status === 403) {
-          return { ok: false, error: 'Ключ не принят. Проверь, что скопировал целиком.' };
+          return { ok: false, error: 'Groq отверг запрос (HTTP ' + res.status + '). Скорее всего geo-блок: ты из РФ/Беларуси. Подключи Google Gemini или включи VPN. Если ты не из РФ — проверь, что скопировал ключ целиком.' };
         }
         if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
         const data = await res.json();
@@ -188,6 +190,8 @@ export const PROVIDERS = {
     id: 'polza',
     name: 'Polza.ai (рубли)',
     tagline: 'Платный fallback для РФ — 100₽ депозита хватает на тысячи запросов',
+    worksInRu: true, // Polza — российский провайдер
+    geoNote: '✓ Российский сервис, оплата картой РФ',
     consoleUrl: 'https://polza.ai/dashboard',
     // Formats наблюдались: pza_<32+ alnum> (новые ключи Polza), на legacy
     // также встречаются pl-… и sk-… — поддерживаем все три.
@@ -257,6 +261,8 @@ export const PROVIDERS = {
     id: 'nvidia',
     name: 'NVIDIA NIM',
     tagline: '1000 кредитов на старте, топовые coding-модели (Qwen Coder, Llama 70B)',
+    geoBlocked: true, // NVIDIA блокирует RU/BY по санкциям
+    geoNote: 'Не работает из России (санкции NVIDIA) — нужен VPN',
     consoleUrl: 'https://build.nvidia.com/settings/api-keys',
     keyPattern: /^nvapi-[A-Za-z0-9_-]{40,}$/,
     keyExample: 'nvapi-…',
@@ -279,7 +285,7 @@ export const PROVIDERS = {
           signal: AbortSignal.timeout(15000),
         });
         if (res.status === 401 || res.status === 403) {
-          return { ok: false, error: 'Ключ не принят. Проверь, что скопировал целиком.' };
+          return { ok: false, error: 'NVIDIA отвергла запрос (HTTP ' + res.status + '). Скорее всего санкционный geo-блок РФ/Беларуси. Подключи Google Gemini или используй VPN.' };
         }
         if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
         const data = await res.json();
@@ -306,6 +312,8 @@ export const PROVIDERS = {
     id: 'gemini',
     name: 'Google Gemini',
     tagline: '250–1500 запросов/день (Google рандомизирует), Gemini 2.5 Flash',
+    worksInRu: true, // Gemini API доступен из РФ без VPN
+    geoNote: '✓ Работает из России без VPN',
     consoleUrl: 'https://aistudio.google.com/apikey',
     keyPattern: /^AIza[A-Za-z0-9_-]{35}$/,
     keyExample: 'AIzaSy…',
