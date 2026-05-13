@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { homedir, platform } from 'node:os';
-import { join } from 'node:path';
+import { homedir, platform, sep } from 'node:os';
+import { join, sep as pathSep, relative } from 'node:path';
 import { configuredProviders, PROVIDERS } from './providers.js';
 import { getCooldowns } from './cooldowns.js';
 import { STUDENT_SYSTEM_PROMPT } from './system-prompt.js';
@@ -82,10 +82,23 @@ export async function launchClaude(paths, hub, opts = {}) {
   // Organization · API Usage Billing" header on the welcome screen.
   await seedClaudeSettings();
 
-  // Sandbox: claude works inside ~/krasavacode-projects/ (cwd) — can't reach
-  // Documents/Pictures/keys/etc by default. User can opt out with KRASAVACODE_NO_SANDBOX=1.
+  // Sandbox: claude works inside ~/krasavacode-projects/ by default. Но если
+  // пользователь сам зашёл в подпапку (cd ~/krasavacode-projects/myproj && krasavacode)
+  // — уважаем его выбор и работаем в этой подпапке. Это позволяет держать
+  // каждый проект в отдельной папке вместо общей свалки.
   const useSandbox = process.env.KRASAVACODE_NO_SANDBOX !== '1';
-  const cwd = useSandbox ? await ensureProjectsDir() : process.cwd();
+  const projectsDir = await ensureProjectsDir();
+  const userCwd = process.cwd();
+  let cwd;
+  if (!useSandbox) {
+    cwd = userCwd;
+  } else if (userCwd === projectsDir || userCwd.startsWith(projectsDir + pathSep)) {
+    // Внутри projects dir — уважаем (подпапка проекта)
+    cwd = userCwd;
+  } else {
+    // Где-то ещё (HOME, system path, чужой каталог) — форсим sandbox
+    cwd = projectsDir;
+  }
 
   // Drop any pre-existing Anthropic creds from the shell/Keychain so the
   // welcome screen doesn't greet the student with the real Anthropic owner's
@@ -159,6 +172,19 @@ export async function launchClaude(paths, hub, opts = {}) {
   console.log(line('  ввода прямо тут. Пиши обычным языком.'));
   console.log(line(''));
   console.log(line('  Пример: «Сделай игру тетрис на html»'));
+  console.log('┣' + '━'.repeat(W - 1) + '┫');
+  // Показываем актуальную рабочую папку — ученик должен видеть где он
+  const cwdLabel = cwd === projectsDir
+    ? '~/krasavacode-projects/ (общая папка)'
+    : (cwd.startsWith(projectsDir + pathSep)
+        ? '~/krasavacode-projects/' + relative(projectsDir, cwd)
+        : cwd);
+  console.log(line('  📁 Рабочая папка:'));
+  console.log(line(`     ${cwdLabel}`));
+  if (cwd === projectsDir) {
+    console.log(line('  💡 Совет: создай подпапку под проект:'));
+    console.log(line('     mkdir mygame && cd mygame && krasavacode'));
+  }
   console.log('┣' + '━'.repeat(W - 1) + '┫');
   if (configured.length === 0) {
     console.log(line('  Ни один провайдер не подключён.'));
