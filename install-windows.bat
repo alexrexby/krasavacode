@@ -53,9 +53,9 @@ echo   =============================================
 echo   NEXT STEP - connect free AI providers
 echo   =============================================
 echo.
-echo   Default model is weak. Connect Cerebras (14k req/day) -
-echo   that is the main one. Groq and Gemini optional.
-echo   All free, no card, takes about 1 minute.
+echo   Connect Polza.ai (paid, ~100 RUB via RU card, no VPN)
+echo   or OpenRouter (free, but needs VPN).
+echo   Takes about 1 minute.
 echo.
 echo   Opening connection window in 3 seconds (no clicking needed)...
 timeout /t 3 /nobreak >nul
