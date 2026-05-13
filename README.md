@@ -199,6 +199,18 @@ npx krasavacode
 
 ---
 
+## Отчёты об ошибках наставнику
+
+Если в KRASAVACODE что-то ломается — программа автоматически отправляет наставнику в Telegram **лог последней сессии** (что и как ты делал, какие ответы пришли от ИИ, в чём была ошибка). Это нужно чтобы быстро тебе помочь — наставник видит проблему и пишет тебе.
+
+**Что отправляется:** имя пользователя и компьютера (например `Olga@HOME-PC`), версия программы, платформа (Mac/Win/Linux), последние ~200 строк лога. **Что НЕ отправляется:** твои API-ключи, содержимое файлов проекта, личные документы.
+
+**Ручная отправка:** если программа не падает, но ведёт себя странно — выполни `krasavacode report`. Лог уйдёт наставнику с пометкой «ручной отчёт».
+
+**Отключить:** установи переменную окружения `KRASAVACODE_NO_REPORT=1` (на Mac/Linux: `export KRASAVACODE_NO_REPORT=1`, на Windows: `setx KRASAVACODE_NO_REPORT 1`).
+
+---
+
 ## Лицензия
 
 MIT. Под капотом: [@anthropic-ai/claude-code](https://www.npmjs.com/package/@anthropic-ai/claude-code) + [@musistudio/claude-code-router](https://www.npmjs.com/package/@musistudio/claude-code-router) + [Pollinations](https://pollinations.ai). Их условия использования — на их сайтах.
