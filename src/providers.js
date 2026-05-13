@@ -312,8 +312,8 @@ export const PROVIDERS = {
     id: 'gemini',
     name: 'Google Gemini',
     tagline: '250–1500 запросов/день (Google рандомизирует), Gemini 2.5 Flash',
-    worksInRu: true, // Gemini API доступен из РФ без VPN
-    geoNote: '✓ Работает из России без VPN',
+    geoBlocked: true, // Google в 2025-26 ужесточил geo: блокирует РФ/BY на API уровне ("User location is not supported")
+    geoNote: 'С 2025 Google блокирует доступ из РФ/Беларуси («User location is not supported»). Нужен VPN.',
     consoleUrl: 'https://aistudio.google.com/apikey',
     keyPattern: /^AIza[A-Za-z0-9_-]{35}$/,
     keyExample: 'AIzaSy…',
@@ -337,6 +337,9 @@ export const PROVIDERS = {
         if (res.status === 400 || res.status === 401 || res.status === 403) {
           let detail = '';
           try { detail = (await res.json())?.error?.message || ''; } catch {}
+          if (/location is not supported|location not supported/i.test(detail)) {
+            return { ok: false, error: 'Google не пускает запросы из твоей страны (РФ/Беларусь). Подключи Polza.ai (российский) или включи VPN.' };
+          }
           return { ok: false, error: detail || 'Ключ не принят. Проверь, что скопировал целиком из AI Studio.' };
         }
         if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
