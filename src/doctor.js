@@ -59,7 +59,8 @@ export async function runDoctor() {
 
   console.log('\nСеть:');
   check('npm registry', await checkNetwork('https://registry.npmjs.org/'));
-  check('Pollinations', await checkNetwork('https://text.pollinations.ai/openai/chat/completions'));
+  check('OpenRouter', await checkNetwork('https://openrouter.ai/api/v1/models'));
+  check('Polza.ai', await checkNetwork('https://polza.ai/api/v1/balance'));
 
   console.log('\nПорты:');
   check('3456 (claude-code-router)', await checkPort(3456), 'свободен или используется ccr');
@@ -69,8 +70,8 @@ export async function runDoctor() {
   const cfg = await configuredProviders();
   const cd = await getCooldowns();
   if (cfg.length === 0) {
-    console.log('  пусто (используется Pollinations gpt-oss-20b — слабая модель)');
-    console.log('  → krasavacode setup для подключения Cerebras / Groq / Gemini');
+    console.log('  пусто');
+    console.log('  → krasavacode setup для подключения OpenRouter или Polza');
   } else {
     let i = 1;
     for (const id of cfg) {
@@ -79,7 +80,6 @@ export async function runDoctor() {
       const status = onCD ? `⏳ cooldown до ${new Date(cd[id]).toLocaleString('ru')}` : '✓ готов';
       console.log(`  ${i++}. ${p.name} — ${status}`);
     }
-    console.log(`  ${i}. Pollinations (последний резерв)`);
   }
 
   console.log('\nState:');

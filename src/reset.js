@@ -22,7 +22,6 @@ const TARGETS = [
   { path: join(ROOT, 'cooldowns.json'), label: 'история блокировок (cooldowns)' },
   { path: join(ROOT, 'usage.json'), label: 'статистика использования' },
   { path: join(ROOT, 'state.json'), label: 'настройки KRASAVACODE' },
-  { path: join(ROOT, 'gemini.env'), label: 'старый ключ Gemini (legacy путь)' },
   { path: join(CCR_DIR, 'config.json'), label: 'конфиг claude-code-router' },
   { path: join(ROOT, 'claude-config'), label: 'изолированные настройки Claude Code' },
   // Claude Code v2.1+ создаёт эти пути в обход ANTHROPIC_CONFIG_DIR.

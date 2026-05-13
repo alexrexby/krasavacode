@@ -31,8 +31,7 @@ function openBrowser(url) {
 
 export async function runUpgrade() {
   console.log('🔧 KRASAVACODE upgrade');
-  console.log('   Pollinations покрывает первые шаги, но для серьёзных проектов');
-  console.log('   стоит подключить более мощные модели бесплатно через OmniRoute:');
+  console.log('   Подключение OAuth-провайдеров через OmniRoute (опционально):');
   console.log('   • Kiro AI — Claude Sonnet/Haiku через AWS Builder ID');
   console.log('   • Qoder — Kimi K2 / Qwen3-Coder / DeepSeek-R1');
   console.log('   • Qwen Code — 4 модели Alibaba');
@@ -51,7 +50,7 @@ export async function runUpgrade() {
   }
 
   console.log('🌐 Открываю дашборд OmniRoute в браузере: http://localhost:20128');
-  console.log('   В дашборде: Providers → Add → выбирай Kiro / Qoder / Pollinations.');
+  console.log('   В дашборде: Providers → Add → выбирай Kiro / Qoder / LongCat.');
   console.log('   После настройки нажми Ctrl+C тут, потом обычная команда `krasavacode`.\n');
 
   setTimeout(() => openBrowser('http://localhost:20128'), 3000);

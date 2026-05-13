@@ -122,7 +122,7 @@ export async function launchClaude(paths, hub, opts = {}) {
   // Set KRASAVACODE_BARE=0 to disable for debugging.
   const useBare = process.env.KRASAVACODE_BARE !== '0';
   const passthroughArgs = process.argv.slice(2)
-    .filter(a => !['doctor', 'upgrade', 'setup', 'setup-gemini', 'gemini', 'reset'].includes(a));
+    .filter(a => !['doctor', 'upgrade', 'setup', 'reset', 'logs', 'report'].includes(a));
   if (useBare && !passthroughArgs.includes('--bare')) passthroughArgs.unshift('--bare');
   // Tell Claude Code that $HOME is a trusted directory — bypasses the
   // "trust this folder" dialog regardless of which directory the student
@@ -161,8 +161,8 @@ export async function launchClaude(paths, hub, opts = {}) {
   console.log(line('  Пример: «Сделай игру тетрис на html»'));
   console.log('┣' + '━'.repeat(W - 1) + '┫');
   if (configured.length === 0) {
-    console.log(line('  Pollinations (gpt-oss-20b) — простая модель'));
-    console.log(line('  Чтобы поднять качество: krasavacode setup'));
+    console.log(line('  Ни один провайдер не подключён.'));
+    console.log(line('  Запусти: krasavacode setup'));
   } else {
     console.log(line('  Подключённые провайдеры (fallback chain):'));
     let i = 1;
@@ -184,7 +184,6 @@ export async function launchClaude(paths, hub, opts = {}) {
       }
       console.log(line(`    ${i++}. ${p.name} — ${tag}`));
     }
-    console.log(line(`    ${i}. Pollinations (последний резерв)`));
     if (anyCooldown) {
       console.log(line(''));
       console.log(line('  Сбросить cooldowns: krasavacode reset --cooldowns'));

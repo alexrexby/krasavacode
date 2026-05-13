@@ -54,7 +54,7 @@ export async function startHub(paths) {
   process.stdout.write(`🚀 Поднимаю локальный gateway на порту ${PORT}… `);
 
   // Inject every configured provider's API key as env var so that ccr's
-  // config.json can reference them via interpolation ($CEREBRAS_API_KEY etc).
+  // config.json can reference them via interpolation ($OPENROUTER_API_KEY etc).
   const ccrEnv = { ...paths.env };
   for (const id of await configuredProviders()) {
     const key = await loadProviderKey(id);

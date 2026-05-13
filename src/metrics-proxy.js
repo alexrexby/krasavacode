@@ -58,18 +58,8 @@ function getFreePort() {
   });
 }
 
-// Cerebras free tier has 8K context. Claude Code easily sends 30-50K-char
-// payloads (system prompt + open files + history + tool defs). If we naively
-// route every request to Cerebras first, most of them 400 → cooldown → switch
-// to Groq, wasting 1-2 seconds per request. Skip Cerebras preemptively when
-// the payload is too big.
-//
-// Rough estimate: 1 token ≈ 3-4 chars for mixed text. 8K tokens × 3 ≈ 24K chars.
-// We give a safety margin and skip at 22K chars.
-const CEREBRAS_PAYLOAD_LIMIT_CHARS = 22_000;
-
 /** Pick the first available provider not on cooldown, in priority order. */
-async function chooseProvider(payloadSize = 0) {
+async function chooseProvider() {
   const cd = await getCooldowns();
   const configured = await configuredProviders();
   const now = Date.now();
@@ -77,12 +67,8 @@ async function chooseProvider(payloadSize = 0) {
 
   for (const id of configured) {
     if (onCooldown(id)) continue;
-    if (id === 'cerebras' && payloadSize > CEREBRAS_PAYLOAD_LIMIT_CHARS) continue; // 8K context fix
     return { id, model: PROVIDERS[id].defaultModel };
   }
-  // Try Pollinations next; if even Pollinations is on cooldown — null.
-  // All custom providers exhausted — fall back to Pollinations
-  if (!onCooldown('pollinations')) return { id: 'pollinations', model: 'openai' };
   return null;
 }
 
@@ -116,14 +102,12 @@ const FRIENDLY_429 = () => ({
 });
 
 /**
- * Cerebras strict-mode rejects Anthropic-style payloads:
+ * Strict OpenAI-compat providers (Polza) reject Anthropic-style payloads:
  *   - content as array of text blocks → must be plain string
  *   - cache_control on any block → unknown property
  *   - reasoning / thinking fields → unknown property
  *
- * To make it work we collapse arrays-of-text-blocks into joined strings.
- * This kills prompt caching and tool_use blocks — that's why Cerebras is
- * placed LAST in PROVIDER_PRIORITY (only used when others on cooldown).
+ * Collapse arrays-of-text-blocks into joined strings.
  */
 function flattenTextBlocks(value) {
   if (typeof value === 'string') return value;
@@ -138,10 +122,9 @@ function flattenTextBlocks(value) {
   return '';
 }
 
-// Анторопиковский payload содержит расширения которых OpenAI-compat API
-// не понимает (cache_control, content-arrays со сложными блоками, reasoning,
-// thinking). Cerebras 400-ит, Polza 400-ит, Groq иногда тоже.
-// Очищаем для всех OpenAI-compat провайдеров.
+// Anthropic payload содержит расширения которых OpenAI-compat API
+// не понимает (cache_control, content-arrays, reasoning, thinking).
+// Polza 400-ит на таких. Очищаем перед форвардом.
 function cleanForOpenAICompat(parsed) {
   delete parsed.reasoning;
   delete parsed.thinking;
@@ -159,10 +142,9 @@ function cleanForOpenAICompat(parsed) {
   }
 }
 
-// Список провайдеров с чистым OpenAI-схема — для них стрипаем Anthropic-доп.
-// Gemini и Pollinations отдельные: первый идёт через ccr-transformer 'gemini'
-// который сам конвертирует, второй принимает что угодно.
-const OPENAI_COMPAT_PROVIDERS = new Set(['cerebras', 'groq', 'openrouter', 'nvidia', 'polza']);
+// Только Polza получает clean — у OpenRouter есть свой transformer в ccr
+// который сам конвертирует Anthropic ↔ OpenAI, ему не нужно.
+const OPENAI_COMPAT_PROVIDERS = new Set(['polza']);
 
 function rewriteBodyWithProvider(originalBody, providerId, modelName, debug = false) {
   try {
@@ -211,8 +193,8 @@ export async function startMetricsProxy(upstreamBaseUrl) {
     if (debug) console.error(`[metrics] ${req.method} ${req.url}`);
 
     // Claude Code v2.1+ asks GET /v1/models BEFORE sending any request,
-    // and refuses models that aren't in the response. Our upstream (ccr → Pollinations)
-    // returns "openai-fast" etc — no Claude models. Fake the list ourselves.
+    // and refuses models that aren't in the response. Our upstream (ccr → provider)
+    // returns provider-specific slugs — no Claude models. Fake the list ourselves.
     if (isModelList) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({
@@ -248,15 +230,14 @@ export async function startMetricsProxy(upstreamBaseUrl) {
       const numConfigured = (await configuredProviders()).length;
       const maxAttempts = Math.max(numConfigured + 1, 3);
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-        let choice = await chooseProvider(originalBody.length);
-        // All on cooldown? Wait up to 30s for the soonest one to free up
-        // (Pollinations per-minute cooldown will recover quickly).
+        let choice = await chooseProvider();
+        // All on cooldown? Wait up to 30s for the soonest one to free up.
         if (!choice) {
           if (debug) console.error('[metrics] all on cooldown — wait up to 30s');
           const deadline = Date.now() + 30_000;
           while (Date.now() < deadline) {
             await new Promise(r => setTimeout(r, 2000));
-            choice = await chooseProvider(originalBody.length);
+            choice = await chooseProvider();
             if (choice) break;
           }
         }
@@ -308,32 +289,18 @@ export async function startMetricsProxy(upstreamBaseUrl) {
         const upBody = Buffer.concat(errChunks).toString('utf8');
         if (debug) console.error(`[metrics] ${upRes.statusCode} from ${choice.id}: ${upBody.slice(0, 200)}`);
 
-        // Pollinations queue-full responses come back almost instantly —
-        // the upstream is fine, just busy. Wait briefly so the next attempt
-        // doesn't slam back the same race.
-        const isQueueFull = upBody.includes('Queue full') || upBody.includes('queue full');
-        if (choice.id === 'pollinations' && isQueueFull) {
-          await new Promise(r => setTimeout(r, 1500));
-        }
-
         let effectiveReason;
         if (code === 401 || code === 403) {
-          // Invalid/expired/blocked key — provider is dead until user re-runs
-          // setup. Long cooldown (until tomorrow) so we don't waste retries.
+          // Invalid/expired/blocked key — provider is dead until user re-runs setup.
           effectiveReason = 'per-day';
         } else if (code === 400) {
-          // 400 = payload incompatibility. После v0.5.35 cleanForOpenAICompat
-          // снимает большинство таких случаев, поэтому хватит per-hour.
-          // Платный провайдер не должен залипать на сутки от одной 400-шибки.
+          // 400 = payload incompatibility. cleanForOpenAICompat снимает
+          // большинство таких случаев, hour-cooldown достаточно.
           effectiveReason = 'per-hour';
         } else if (code === 404) {
-          // 404 = "model not found on this provider". Likely model rename
-          // (OpenRouter does this often). One hour skip, may recover.
+          // 404 = "model not found on this provider". Model rename (часто на OpenRouter).
           effectiveReason = 'per-hour';
         } else if (code >= 500) {
-          // 5xx = transient provider issue. Short skip.
-          effectiveReason = 'per-minute';
-        } else if (choice.id === 'pollinations') {
           effectiveReason = 'per-minute';
         } else {
           effectiveReason = parseQuotaReason(upBody);

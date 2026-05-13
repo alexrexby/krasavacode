@@ -15,7 +15,7 @@ import { startSessionLog, listLogs, tailLog, printLogHint } from '../src/session
 import { reportToTelegram, pingTelegram } from '../src/telegram-reporter.js';
 
 // Hardcoded so it works inside Bun --compile (no FS access to package.json)
-const VERSION = '0.5.36';
+const VERSION = '0.5.37';
 
 const cmd = process.argv[2];
 
@@ -96,7 +96,7 @@ async function main() {
 
   if (SESSION_LOG_PATH) printLogHint();
 
-  const isExplicitSetup = cmd === 'setup' || cmd === 'setup-gemini' || cmd === 'gemini';
+  const isExplicitSetup = cmd === 'setup';
 
   // First-run auto-setup: if no providers are connected, force the wizard
   // before going to the chat. The user shouldn't have to know about

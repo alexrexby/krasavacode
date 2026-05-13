@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile, copyFile, access } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { PROVIDERS, configuredProviders, pollinationsProvider } from './providers.js';
+import { PROVIDERS, configuredProviders } from './providers.js';
 
 const ROOT = join(homedir(), '.krasavacode');
 const CCR_DIR = join(homedir(), '.claude-code-router');
@@ -17,12 +17,14 @@ async function exists(p) { return access(p).then(() => true).catch(() => false);
 async function buildConfig() {
   const configured = await configuredProviders();
   const providers = configured.map(id => PROVIDERS[id].ccrProvider());
-  // Pollinations always last — final no-key fallback
-  providers.push(pollinationsProvider());
 
-  const firstId = configured[0];
-  const firstModel = firstId ? PROVIDERS[firstId].defaultModel : 'openai';
-  const firstProv = firstId ? firstId : 'pollinations';
+  // Если ничего не подключено — оставим первый из PROVIDER_PRIORITY с пустым
+  // ключом. CCR всё равно стартанёт, а ученик пройдёт через wizard.
+  const firstId = configured[0] || 'openrouter';
+  const firstModel = configured[0]
+    ? PROVIDERS[firstId].defaultModel
+    : PROVIDERS.openrouter.defaultModel;
+  const firstProv = firstId;
 
   const config = {
     HOST: '127.0.0.1',

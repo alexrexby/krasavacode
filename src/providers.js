@@ -1,11 +1,13 @@
 /**
- * Provider registry: единый источник правды для всех бесплатных провайдеров.
+ * Provider registry: единый источник правды для всех провайдеров.
  *
- * Приоритет в chain (по убыванию щедрости free tier):
- *   1. cerebras    — 1M токенов/день, Llama 3.3 70B / Qwen3 235B
- *   2. groq        — 1000 RPD, Kimi K2 / DeepSeek-R1
- *   3. gemini      — 250 RPD, Gemini 2.5 Flash (фолбэк)
- *   4. pollinations — без квоты, gpt-oss-20b (последний резерв)
+ * v0.5.37: оставлены только два — реалистичные для нашей аудитории (РФ/BY).
+ *   1. openrouter — free tier 50 RPD на десятки моделей (с VPN из РФ)
+ *   2. polza      — платный российский, рубли через карту РФ, без VPN
+ *
+ * Cerebras, Groq, Gemini, NVIDIA удалены — все блокируют РФ/BY.
+ * Pollinations удалён — слабая модель плохо вызывает tool_use, в результате
+ *   ученик получает текст вместо файлов проекта.
  */
 
 import { homedir } from 'node:os';
@@ -17,129 +19,16 @@ export const KEYS_DIR = join(ROOT, 'keys');
 
 // Keys live in ~/.krasavacode/keys/<provider>.env as: PROVIDER_API_KEY=...
 const ENV_VAR_NAMES = {
-  cerebras: 'CEREBRAS_API_KEY',
-  groq: 'GROQ_API_KEY',
   openrouter: 'OPENROUTER_API_KEY',
-  gemini: 'GEMINI_API_KEY',
-  nvidia: 'NVIDIA_API_KEY',
   polza: 'POLZA_API_KEY',
 };
 
 export const PROVIDERS = {
-  cerebras: {
-    id: 'cerebras',
-    name: 'Cerebras',
-    tagline: '14 400 запросов/день + 1M токенов/день, скорость 2600 ток/сек',
-    geoBlocked: true, // Cerebras блокирует RU/BY/CU/KP/IR — возвращает 401
-    geoNote: 'Не работает из России без VPN (вернёт «ключ не принят», даже если ключ правильный)',
-    consoleUrl: 'https://cloud.cerebras.ai/?utm_source=krasavacode',
-    // Cerebras в 2025 переехали с csk-XXX (alphanumeric) на csk_xxx (с
-    // underscores и dashes в теле). Принимаем оба формата.
-    keyPattern: /^csk[-_][A-Za-z0-9_-]{20,}$/,
-    keyExample: 'csk-… или csk_…',
-    keyHowto: [
-      'Нажми «Открыть страницу регистрации» (зелёная кнопка ниже)',
-      'На сайте Cerebras: «Sign up» — через Google или email, без карты',
-      'Если спросит Use case — выбирай Personal (НЕ Business)',
-      'После входа: слева «API Keys» → «Create API Key» → любое название',
-      'Скопируй ключ ВЕСЬ (начинается с csk-) и вставь в поле ниже',
-    ],
-    quota: '14 400 запросов/день + 1M токенов/день, 30 запросов/мин',
-    bestModel: 'Qwen 3 235B',
-    rpd: 14_400,
-    tpd: 1_000_000,
-    rpm: 30,
-    contextLimit: 8_000,
-    // Verify via /models — model-name agnostic and gives instant feedback.
-    verify: async (key) => {
-      try {
-        const res = await fetch('https://api.cerebras.ai/v1/models', {
-          headers: { 'authorization': `Bearer ${key}` },
-          signal: AbortSignal.timeout(15000),
-        });
-        if (res.status === 401 || res.status === 403) {
-          return { ok: false, error: 'Cerebras отверг запрос (HTTP ' + res.status + '). Скорее всего geo-блок: ты из РФ/Беларуси. Подключи Google Gemini или включи VPN. Если ты не из РФ — проверь, что аккаунт активирован.' };
-        }
-        if (!res.ok) {
-          let detail = '';
-          try { detail = (await res.text()).slice(0, 200); } catch {}
-          return { ok: false, error: `HTTP ${res.status}${detail ? ': ' + detail : ''}` };
-        }
-        const data = await res.json();
-        const n = data.data?.length || 0;
-        return { ok: true, text: `доступно моделей: ${n}` };
-      } catch (e) {
-        return { ok: false, error: 'Сеть не отвечает: ' + e.message };
-      }
-    },
-    ccrProvider: () => ({
-      // Free tier: qwen-3-235b, gpt-oss-120b, llama3.1-8b. Llama 3.3 70B
-      // больше не на free (deprecated/убран Cerebras в ~2025).
-      name: 'cerebras',
-      api_base_url: 'https://api.cerebras.ai/v1/chat/completions',
-      api_key: '$CEREBRAS_API_KEY',
-      models: ['qwen-3-235b-a22b-instruct-2507', 'gpt-oss-120b', 'llama3.1-8b'],
-    }),
-    defaultModel: 'qwen-3-235b-a22b-instruct-2507',
-  },
-
-  groq: {
-    id: 'groq',
-    name: 'Groq',
-    tagline: '1000 запросов/день, GPT-OSS 120B + DeepSeek-R1',
-    geoBlocked: true, // Groq блокирует RU/BY/CU/KP/IR
-    geoNote: 'Не работает из России без VPN (вернёт «ключ не принят», даже если ключ правильный)',
-    consoleUrl: 'https://console.groq.com/keys',
-    keyPattern: /^gsk_[A-Za-z0-9]{40,}$/,
-    keyExample: 'gsk_…',
-    keyHowto: [
-      'Войди через Google или GitHub — без карты',
-      'Перейди в раздел «API Keys» (страница уже открыта)',
-      'Нажми «Create API Key» → введи название',
-      'Скопируй ключ (начинается с gsk_)',
-    ],
-    quota: '~1 000 запросов в день, 30 запросов/мин',
-    bestModel: 'GPT-OSS 120B',
-    rpd: 1000,
-    tpd: null,
-    rpm: 30,
-    contextLimit: 128_000,
-    verify: async (key) => {
-      try {
-        const res = await fetch('https://api.groq.com/openai/v1/models', {
-          headers: { 'authorization': `Bearer ${key}` },
-          signal: AbortSignal.timeout(15000),
-        });
-        if (res.status === 401 || res.status === 403) {
-          return { ok: false, error: 'Groq отверг запрос (HTTP ' + res.status + '). Скорее всего geo-блок: ты из РФ/Беларуси. Подключи Google Gemini или включи VPN. Если ты не из РФ — проверь, что скопировал ключ целиком.' };
-        }
-        if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
-        const data = await res.json();
-        const n = data.data?.length || 0;
-        return { ok: true, text: `доступно моделей: ${n}` };
-      } catch (e) {
-        return { ok: false, error: 'Сеть не отвечает: ' + e.message };
-      }
-    },
-    ccrProvider: () => ({
-      // moonshotai/kimi-k2-instruct deprecated by Groq in 2025-09 →
-      // kimi-k2-instruct-0905 deprecated 2026-03 → hosts pushes openai/gpt-oss-120b.
-      name: 'groq',
-      api_base_url: 'https://api.groq.com/openai/v1/chat/completions',
-      api_key: '$GROQ_API_KEY',
-      models: [
-        'openai/gpt-oss-120b',
-        'deepseek-r1-distill-llama-70b',
-        'llama-3.3-70b-versatile',
-      ],
-    }),
-    defaultModel: 'openai/gpt-oss-120b',
-  },
-
   openrouter: {
     id: 'openrouter',
     name: 'OpenRouter',
     tagline: '50 запросов/день на 28 free-моделей (Kimi 2.5, DeepSeek V4, Qwen3-235B)',
+    geoNote: 'Из РФ/Беларуси нужен VPN — OpenRouter может блокировать по IP',
     consoleUrl: 'https://openrouter.ai/keys',
     keyPattern: /^sk-or-v1-[a-f0-9]{64}$/,
     keyExample: 'sk-or-v1-…',
@@ -161,7 +50,7 @@ export const PROVIDERS = {
           signal: AbortSignal.timeout(15000),
         });
         if (res.status === 401 || res.status === 403) {
-          return { ok: false, error: 'Ключ не принят. Проверь, что скопировал целиком.' };
+          return { ok: false, error: 'Ключ не принят. Проверь, что скопировал целиком. Если ты в РФ — возможно нужен VPN.' };
         }
         if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
         const data = await res.json();
@@ -189,9 +78,9 @@ export const PROVIDERS = {
   polza: {
     id: 'polza',
     name: 'Polza.ai (рубли)',
-    tagline: 'Платный fallback для РФ — 100₽ депозита хватает на тысячи запросов',
+    tagline: 'Платный российский — 100₽ депозита хватает на тысячи запросов',
     worksInRu: true, // Polza — российский провайдер
-    geoNote: '✓ Российский сервис, оплата картой РФ',
+    geoNote: '✓ Российский сервис, оплата картой РФ, без VPN',
     consoleUrl: 'https://polza.ai/dashboard',
     // Polza часто меняет формат ключей (pza_*, pl-*, sk-*, иногда без префикса).
     // Не блокируем по regex — пускаем на verify, который скажет точно.
@@ -257,127 +146,11 @@ export const PROVIDERS = {
     }),
     defaultModel: 'deepseek/deepseek-r1-distill-llama-70b',
   },
-
-  nvidia: {
-    id: 'nvidia',
-    name: 'NVIDIA NIM',
-    tagline: '1000 кредитов на старте, топовые coding-модели (Qwen Coder, Llama 70B)',
-    geoBlocked: true, // NVIDIA блокирует RU/BY по санкциям
-    geoNote: 'Не работает из России (санкции NVIDIA) — нужен VPN',
-    consoleUrl: 'https://build.nvidia.com/settings/api-keys',
-    keyPattern: /^nvapi-[A-Za-z0-9_-]{40,}$/,
-    keyExample: 'nvapi-…',
-    keyHowto: [
-      'Войди через Google или зарегистрируйся как NVIDIA Developer (бесплатно)',
-      'На странице ключей нажми «Generate Key»',
-      'Можешь привязать к любому проекту (или создать новый)',
-      'Скопируй ключ (начинается с nvapi-)',
-    ],
-    quota: '~1 000 кредитов на старте, можно запросить до 5 000 (через форму)',
-    bestModel: 'Qwen 2.5 Coder 32B / Llama 3.3 70B',
-    rpd: null,
-    tpd: null,
-    rpm: 40,
-    contextLimit: 128_000,
-    verify: async (key) => {
-      try {
-        const res = await fetch('https://integrate.api.nvidia.com/v1/models', {
-          headers: { 'authorization': `Bearer ${key}` },
-          signal: AbortSignal.timeout(15000),
-        });
-        if (res.status === 401 || res.status === 403) {
-          return { ok: false, error: 'NVIDIA отвергла запрос (HTTP ' + res.status + '). Скорее всего санкционный geo-блок РФ/Беларуси. Подключи Google Gemini или используй VPN.' };
-        }
-        if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
-        const data = await res.json();
-        const n = data.data?.length || 0;
-        return { ok: true, text: `доступно моделей: ${n}` };
-      } catch (e) {
-        return { ok: false, error: 'Сеть не отвечает: ' + e.message };
-      }
-    },
-    ccrProvider: () => ({
-      name: 'nvidia',
-      api_base_url: 'https://integrate.api.nvidia.com/v1/chat/completions',
-      api_key: '$NVIDIA_API_KEY',
-      models: [
-        'qwen/qwen2.5-coder-32b-instruct',
-        'meta/llama-3.3-70b-instruct',
-        'deepseek-ai/deepseek-r1',
-      ],
-    }),
-    defaultModel: 'qwen/qwen2.5-coder-32b-instruct',
-  },
-
-  gemini: {
-    id: 'gemini',
-    name: 'Google Gemini',
-    tagline: '250–1500 запросов/день (Google рандомизирует), Gemini 2.5 Flash',
-    geoBlocked: true, // Google в 2025-26 ужесточил geo: блокирует РФ/BY на API уровне ("User location is not supported")
-    geoNote: 'С 2025 Google блокирует доступ из РФ/Беларуси («User location is not supported»). Нужен VPN.',
-    consoleUrl: 'https://aistudio.google.com/apikey',
-    keyPattern: /^AIza[A-Za-z0-9_-]{35}$/,
-    keyExample: 'AIzaSy…',
-    keyHowto: [
-      'Войди через свой Google-аккаунт (Gmail/YouTube подойдут)',
-      'Нажми «Create API key» наверху страницы',
-      'Если попросит выбрать проект — оставь предложенный',
-      'Скопируй ключ (начинается с AIza)',
-    ],
-    quota: '250–1500 запросов в день (зависит от аккаунта), 10 запросов/мин',
-    bestModel: 'Gemini 2.5 Flash',
-    rpd: 250, // лимит, который мы предполагаем для warning thresholds
-    tpd: null,
-    rpm: 10,
-    contextLimit: 1_000_000,
-    verify: async (key) => {
-      // Gemini: ListModels проверяет валидность ключа без расхода квоты.
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`;
-        const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
-        if (res.status === 400 || res.status === 401 || res.status === 403) {
-          let detail = '';
-          try { detail = (await res.json())?.error?.message || ''; } catch {}
-          if (/location is not supported|location not supported/i.test(detail)) {
-            return { ok: false, error: 'Google не пускает запросы из твоей страны (РФ/Беларусь). Подключи Polza.ai (российский) или включи VPN.' };
-          }
-          return { ok: false, error: detail || 'Ключ не принят. Проверь, что скопировал целиком из AI Studio.' };
-        }
-        if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
-        const data = await res.json();
-        const n = (data.models || []).length;
-        return { ok: true, text: `доступно моделей: ${n}` };
-      } catch (e) {
-        return { ok: false, error: 'Сеть не отвечает: ' + e.message };
-      }
-    },
-    ccrProvider: () => ({
-      name: 'gemini',
-      api_base_url: 'https://generativelanguage.googleapis.com/v1beta/models/',
-      api_key: '$GEMINI_API_KEY',
-      models: ['gemini-2.5-flash', 'gemini-flash-latest'],
-      transformer: { use: ['gemini'] },
-    }),
-    defaultModel: 'gemini-2.5-flash',
-  },
 };
 
 // Цепочка провайдеров. Первый = дефолт, далее fallback при cooldown/ошибках.
-// - groq, openrouter, gemini, nvidia — нормальные OpenAI-compatible free tier
-// - cerebras в конце т.к. strict-mode 400 на Anthropic payload (cache_control,
-//   content-array)
-// - polza — платный российский (рубли через карту), работает когда все free
-//   квоты исчерпаны. Включается только если ученик подключил его в setup.
-export const PROVIDER_PRIORITY = ['groq', 'openrouter', 'gemini', 'nvidia', 'cerebras', 'polza'];
-
-export function pollinationsProvider() {
-  return {
-    name: 'pollinations',
-    api_base_url: 'https://text.pollinations.ai/openai/chat/completions',
-    api_key: 'public',
-    models: ['openai', 'openai-fast'],
-  };
-}
+// OpenRouter сначала (бесплатный), Polza second (платный backup).
+export const PROVIDER_PRIORITY = ['openrouter', 'polza'];
 
 function envFile(providerId) {
   return join(KEYS_DIR, `${providerId}.env`);
@@ -386,19 +159,13 @@ function envFile(providerId) {
 async function exists(p) { return access(p).then(() => true).catch(() => false); }
 
 export async function loadProviderKey(providerId) {
-  // New layout: ~/.krasavacode/keys/<id>.env
-  const newPath = envFile(providerId);
-  // Legacy layout (gemini only): ~/.krasavacode/gemini.env
-  const legacyPath = join(ROOT, `${providerId}.env`);
-
-  for (const p of [newPath, legacyPath]) {
-    try {
-      const content = await readFile(p, 'utf8');
-      const varName = ENV_VAR_NAMES[providerId];
-      const m = content.match(new RegExp(`^${varName}=(.+)$`, 'm'));
-      if (m) return m[1].trim();
-    } catch {}
-  }
+  const filePath = envFile(providerId);
+  try {
+    const content = await readFile(filePath, 'utf8');
+    const varName = ENV_VAR_NAMES[providerId];
+    const m = content.match(new RegExp(`^${varName}=(.+)$`, 'm'));
+    if (m) return m[1].trim();
+  } catch {}
   return null;
 }
 
