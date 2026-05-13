@@ -193,10 +193,11 @@ export const PROVIDERS = {
     worksInRu: true, // Polza — российский провайдер
     geoNote: '✓ Российский сервис, оплата картой РФ',
     consoleUrl: 'https://polza.ai/dashboard',
-    // Formats наблюдались: pza_<32+ alnum> (новые ключи Polza), на legacy
-    // также встречаются pl-… и sk-… — поддерживаем все три.
-    keyPattern: /^pza_[A-Za-z0-9]{20,}$|^pl-[A-Za-z0-9_-]{20,}$|^sk-[A-Za-z0-9_-]{20,}$/,
-    keyExample: 'pza_…',
+    // Polza часто меняет формат ключей (pza_*, pl-*, sk-*, иногда без префикса).
+    // Не блокируем по regex — пускаем на verify, который скажет точно.
+    // Требуем только: не пустая строка длиной ≥ 16 без пробелов.
+    keyPattern: /^[A-Za-z0-9._-]{16,}$/,
+    keyExample: 'pza_… или pl-…',
     keyHowto: [
       'Зарегистрируйся через email или Google (без VPN из РФ)',
       'Пополни баланс российской картой минимум на 100₽',
