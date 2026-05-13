@@ -94,7 +94,7 @@ export const PROVIDERS = {
       'Скопируй ключ',
     ],
     quota: 'Платный (100₽ ≈ 1000+ запросов на дешёвых моделях)',
-    bestModel: 'DeepSeek V3 / Qwen Coder (≤2₽ за 1M токенов)',
+    bestModel: 'DeepSeek V4 Flash / Qwen 3.5 Flash (1M контекст, ✓ tool use)',
     rpd: null,
     tpd: null,
     rpm: 60,
@@ -136,16 +136,20 @@ export const PROVIDERS = {
       // ВАЖНО: Claude Code требует tool use на КАЖДОМ запросе. Reasoning-only
       // модели (DeepSeek R1 distill и т.п.) сюда добавлять НЕЛЬЗЯ — Polza
       // ответит 400 "No endpoints found that support tool use".
-      //   qwen/qwen-2.5-coder-32b-instruct        2.72₽/1M  ctx=32k   ✓ tools  (default)
-      //   qwen/qwen3.5-flash-02-23                5.88₽/1M  ctx=1M    ✓ tools
+      //   deepseek/deepseek-v4-flash             12.85₽/1M  ctx=1M    ✓ tools  (default)
+      //   qwen/qwen3.5-flash-02-23                5.88₽/1M  ctx=1M    ✓ tools  (cheap fallback)
       //   z-ai/glm-4.7-flash                      6.34₽/1M  ctx=200k  ✓ tools
+      // qwen/qwen-2.5-coder-32b-instruct убран: на Polza endpoint этой модели
+      // не поддерживает tool use (проверено 2026-05-13, ответ 400 "No endpoints
+      // found that support tool use"). Несмотря на дешёвую цену 2.72₽/1M — для
+      // Claude Code не годится.
       models: [
-        'qwen/qwen-2.5-coder-32b-instruct',
+        'deepseek/deepseek-v4-flash',
         'qwen/qwen3.5-flash-02-23',
         'z-ai/glm-4.7-flash',
       ],
     }),
-    defaultModel: 'qwen/qwen-2.5-coder-32b-instruct',
+    defaultModel: 'deepseek/deepseek-v4-flash',
   },
 };
 
