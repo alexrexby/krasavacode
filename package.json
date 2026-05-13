@@ -1,6 +1,6 @@
 {
   "name": "krasavacode",
-  "version": "0.5.42",
+  "version": "0.5.43",
   "description": "KRASAVACODE — однокнопочный бесплатный вайбкодинг для учеников. Claude Code на бесплатных провайдерах через локальный gateway. Сам ставит Node при необходимости.",
   "type": "module",
   "bin": {
