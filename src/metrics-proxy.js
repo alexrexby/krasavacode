@@ -24,6 +24,35 @@ function dlog(msg) {
 
 const ROOT = join(homedir(), '.krasavacode');
 const USAGE_FILE = join(ROOT, 'usage.json');
+const LAST_REQUEST_FILE = join(ROOT, 'last-request.json');
+
+/**
+ * Сохраняем тело первого /v1/messages запроса сессии в файл — это
+ * ground-truth payload который Claude Code отправляет. Нужен для
+ * диагностики случаев когда модель не вызывает tool_use (видимо
+ * Claude Code шлёт что-то специфичное чего нет в моих синтетических
+ * тестах). Алекс просит этот файл у ученика после неудачной сессии.
+ *
+ * Перезаписывается на КАЖДЫЙ первый запрос (т.е. первый user message
+ * сессии) — не нужно копить историю, нужен один свежий пример.
+ */
+let _firstReqDumped = false;
+async function dumpFirstRequest(bodyBuf) {
+  if (_firstReqDumped) return;
+  _firstReqDumped = true;
+  try {
+    const parsed = JSON.parse(bodyBuf.toString('utf8'));
+    // Только если это первый user-message (нет ассистент-ответов ещё)
+    const hasAssistant = (parsed.messages || []).some(m => m.role === 'assistant');
+    if (hasAssistant) { _firstReqDumped = false; return; }
+    await mkdir(ROOT, { recursive: true });
+    await writeFile(LAST_REQUEST_FILE, JSON.stringify({
+      capturedAt: new Date().toISOString(),
+      note: 'Первый user-message сессии. Пришли этот файл наставнику если модель не создаёт файлы.',
+      body: parsed,
+    }, null, 2));
+  } catch {} // не валим запрос если dump не получился
+}
 
 function todayKey() { return new Date().toISOString().slice(0, 10); }
 
@@ -335,6 +364,10 @@ export async function startMetricsProxy(upstreamBaseUrl) {
           return;
         }
       } catch {} // если тело не парсится — идём дальше, апстрим разберётся
+
+      // Diagnostic: дамп ground-truth payload первого запроса сессии — нужен
+      // когда модель не вызывает tool_use и непонятно почему.
+      dumpFirstRequest(originalBody).catch(() => {});
 
       // /v1/messages: provider+model selection with retry-on-failure.
       // tried: Map<providerId, Set<modelName>> — модели уже попробованные в

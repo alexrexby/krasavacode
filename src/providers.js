@@ -137,31 +137,36 @@ export const PROVIDERS = {
       // модели (DeepSeek R1 distill и т.п.) сюда добавлять НЕЛЬЗЯ — Polza
       // ответит 400 "No endpoints found that support tool use".
       //
-      //   z-ai/glm-4.7-flash                      6.34₽/1M  ctx=200k  ✓ tools  (default)
-      //   deepseek/deepseek-v4-flash             12.85₽/1M  ctx=1M    ✓ tools  (fallback)
+      //   deepseek/deepseek-v4-flash             12.85₽/1M  ctx=1M    ✓ tools  (default)
+      //   z-ai/glm-4.7-flash                      6.34₽/1M  ctx=200k  ✓ tools  (fallback)
       //   qwen/qwen3.5-flash-02-23                5.88₽/1M  ctx=1M    ✓ tools  (cheap fallback)
       //
-      // GLM 4.7 Flash дефолтом: проверено 2026-05-13 живым shootout'ом — это
-      // единственная модель из доступных на Polza, которая:
-      //   (а) выдаёт обязательную преамбулу 🔧 перед tool_use,
-      //   (б) корректно ЗАВЕРШАЕТ turn блоком «▶ Как посмотреть результат»
-      //       после tool_result (Qwen/V4 Flash зацикливаются на следующих
-      //       Write'ах вместо stop'а — Claude Code висит),
-      //   (в) не галлюцинирует tool-server ошибки типа «Dependencies not
-      //       installed for server bash» / «Pausing - waiting for bash server»
-      //       (DeepSeek V4 Flash на Polza воспроизводимо генерит это в текст).
-      // DeepSeek V4 Pro исключён: возвращает большие JSON-ответы с
-      // незакрытыми строками (parse error на клиенте).
-      // qwen/qwen-2.5-coder-32b-instruct исключён: на Polza endpoint этой
-      // модели не поддерживает tool use (400 «No endpoints found that
-      // support tool use»).
+      // ИСТОРИЯ ВЫБОРА (важно для будущих ревизий):
+      // 2026-05-13 поставил GLM 4.7 Flash дефолтом — в синтетическом shootout'е
+      // (прямые запросы к Polza с tools = [Write, Bash, LS]) она выглядела
+      // лучше всех: преамбула 🔧, Write, закрытие turn'а блоком ▶, без
+      // галлюцинаций. НО! На реальном Claude Code v2.1.140 payload GLM
+      // воспроизводимо перестаёт вызывать tool_use вообще — генерит чистый
+      // текст с преамбулой, Write не зовёт. Локально через наш hub
+      // воспроизвести не удалось (с большим system, stream'ом, cache_control,
+      // 8 tools — везде корректный tool_use). Причина пока неизвестна.
+      // 2026-05-14 откатил на DeepSeek V4 Flash — она галлюцинирует
+      // «Dependencies not installed for server bash» и не идеально закрывает
+      // turn'ы, НО реально вызывает Write и создаёт файлы. Это работает
+      // (с шероховатостями) — GLM через Claude Code не работает совсем.
+      // Когда придёт dump real request body (~/.krasavacode/last-request.json
+      // после ученической сессии) — можно будет понять что Claude Code
+      // шлёт такого что ломает GLM, и вернуться к ней.
+      //
+      // DeepSeek V4 Pro исключён: парс-error на больших JSON-ответах.
+      // qwen/qwen-2.5-coder-32b-instruct исключён: 400 без tool use.
       models: [
-        'z-ai/glm-4.7-flash',
         'deepseek/deepseek-v4-flash',
+        'z-ai/glm-4.7-flash',
         'qwen/qwen3.5-flash-02-23',
       ],
     }),
-    defaultModel: 'z-ai/glm-4.7-flash',
+    defaultModel: 'deepseek/deepseek-v4-flash',
   },
 };
 
