@@ -288,6 +288,11 @@ function rewriteBodyWithProvider(originalBody, providerId, modelName) {
   }
 }
 
+// Хард-таймаут на response-headers: если апстрим не начал отвечать за
+// 5 минут — рвём соединение, чтобы ученик не сидел над «Accomplishing… 8m»
+// бесконечно. Сам стрим после headers — без таймаута (длинные ответы ок).
+const UPSTREAM_RESPONSE_HEADERS_TIMEOUT_MS = 5 * 60 * 1000;
+
 function forward(upstream, method, path, headers, bodyBuffer) {
   return new Promise((resolve, reject) => {
     const req = http.request({
@@ -300,8 +305,17 @@ function forward(upstream, method, path, headers, bodyBuffer) {
         host: `${upstream.hostname}:${upstream.port}`,
         'content-length': bodyBuffer ? bodyBuffer.length : 0,
       },
-    }, (res) => resolve(res));
-    req.on('error', reject);
+    }, (res) => {
+      clearTimeout(timer);
+      resolve(res);
+    });
+    req.on('error', (e) => {
+      clearTimeout(timer);
+      reject(e);
+    });
+    const timer = setTimeout(() => {
+      req.destroy(new Error(`upstream did not respond within ${UPSTREAM_RESPONSE_HEADERS_TIMEOUT_MS / 1000}s`));
+    }, UPSTREAM_RESPONSE_HEADERS_TIMEOUT_MS);
     if (bodyBuffer && bodyBuffer.length) req.write(bodyBuffer);
     req.end();
   });
