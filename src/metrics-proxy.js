@@ -27,28 +27,30 @@ const USAGE_FILE = join(ROOT, 'usage.json');
 const LAST_REQUEST_FILE = join(ROOT, 'last-request.json');
 
 /**
- * Сохраняем тело первого /v1/messages запроса сессии в файл — это
- * ground-truth payload который Claude Code отправляет. Нужен для
- * диагностики случаев когда модель не вызывает tool_use (видимо
- * Claude Code шлёт что-то специфичное чего нет в моих синтетических
- * тестах). Алекс просит этот файл у ученика после неудачной сессии.
+ * Сохраняем тело первого «настоящего» запроса сессии — того где у Claude
+ * Code есть tools (то есть это пользовательская задача, а не служебная
+ * title-генерация). Title-запрос идёт первым с tools:[] и output_config —
+ * мы его пропускаем, ждём следующий.
  *
- * Перезаписывается на КАЖДЫЙ первый запрос (т.е. первый user message
- * сессии) — не нужно копить историю, нужен один свежий пример.
+ * Это ground-truth payload Claude Code v2.1.140 для root-cause анализа
+ * случаев когда модель не вызывает tool_use.
  */
 let _firstReqDumped = false;
 async function dumpFirstRequest(bodyBuf) {
   if (_firstReqDumped) return;
-  _firstReqDumped = true;
   try {
     const parsed = JSON.parse(bodyBuf.toString('utf8'));
-    // Только если это первый user-message (нет ассистент-ответов ещё)
+    // Пропускаем служебные запросы (title generation, summary etc):
+    // у них нет tools или есть output_config со schema.
+    const hasTools = Array.isArray(parsed.tools) && parsed.tools.length > 0;
+    const hasOutputConfig = parsed.output_config != null;
     const hasAssistant = (parsed.messages || []).some(m => m.role === 'assistant');
-    if (hasAssistant) { _firstReqDumped = false; return; }
+    if (!hasTools || hasOutputConfig || hasAssistant) return;
+    _firstReqDumped = true;
     await mkdir(ROOT, { recursive: true });
     await writeFile(LAST_REQUEST_FILE, JSON.stringify({
       capturedAt: new Date().toISOString(),
-      note: 'Первый user-message сессии. Пришли этот файл наставнику если модель не создаёт файлы.',
+      note: 'Первый user-task запрос с tools (служебные title/summary пропущены). Пришли наставнику если модель не создаёт файлы.',
       body: parsed,
     }, null, 2));
   } catch {} // не валим запрос если dump не получился
@@ -204,6 +206,76 @@ function detectLoop(parsedBody) {
   return null;
 }
 
+/**
+ * Claude Code v2.1.140 шлёт служебный title-generation запрос ДО основного:
+ *   - model: claude-haiku-4-5-...
+ *   - system: «Generate a concise, sentence-case title (3-7 words)...»
+ *   - tools: []
+ *   - output_config.format.type: json_schema with {title: string}
+ *
+ * Polza (и провайдеры через ccr) НЕ поддерживают Anthropic `output_config`.
+ * Конверсия в OpenAI `response_format: json_schema` тоже не помогает — модели
+ * игнорируют schema и галлюцинируют, отвечая на user-message буквально
+ * (вместо title возвращают калькулятор и т.п.). Этот мусорный «title»
+ * показывается в Claude Code TUI как первое assistant сообщение —
+ * ученик видит «🔧 Сейчас создам index.html…» без всякого tool_use.
+ *
+ * Решение: перехватываем title-запрос в нашем proxy и сразу отдаём
+ * валидный JSON-стрим. В апстрим не идём — экономим токены, время и
+ * не путаем основной flow.
+ */
+function isTitleGenerationRequest(parsed) {
+  if (!parsed) return false;
+  if (Array.isArray(parsed.tools) && parsed.tools.length > 0) return false;
+  // output_config с json_schema — сильный сигнал
+  if (parsed.output_config?.format?.type === 'json_schema') {
+    const props = parsed.output_config.format.schema?.properties;
+    if (props?.title) return true;
+  }
+  // Fallback: ищем фразу в system prompt
+  const sys = parsed.system;
+  const sysText = Array.isArray(sys)
+    ? sys.map(s => s?.text || '').join(' ')
+    : (typeof sys === 'string' ? sys : '');
+  return /Generate a concise.*title|sentence-case title/i.test(sysText);
+}
+
+function buildFakeTitleStream() {
+  const title = 'Coding session';
+  const messageId = `msg_title_stub_${Date.now()}`;
+  // Anthropic SSE event sequence для текстового ответа.
+  // Claude Code v2.1.140 парсит content_block_delta events и собирает текст.
+  // Текст — JSON с полем title, как ожидает Claude Code от schema.
+  const text = JSON.stringify({ title });
+  const events = [
+    { event: 'message_start', data: {
+      type: 'message_start',
+      message: {
+        id: messageId, type: 'message', role: 'assistant',
+        model: 'krasavacode-title-stub',
+        content: [], stop_reason: null, stop_sequence: null,
+        usage: { input_tokens: 0, output_tokens: 0 },
+      },
+    }},
+    { event: 'content_block_start', data: {
+      type: 'content_block_start', index: 0,
+      content_block: { type: 'text', text: '' },
+    }},
+    { event: 'content_block_delta', data: {
+      type: 'content_block_delta', index: 0,
+      delta: { type: 'text_delta', text },
+    }},
+    { event: 'content_block_stop', data: { type: 'content_block_stop', index: 0 }},
+    { event: 'message_delta', data: {
+      type: 'message_delta',
+      delta: { stop_reason: 'end_turn', stop_sequence: null },
+      usage: { output_tokens: 5 },
+    }},
+    { event: 'message_stop', data: { type: 'message_stop' }},
+  ];
+  return events.map(e => `event: ${e.event}\ndata: ${JSON.stringify(e.data)}\n\n`).join('');
+}
+
 function loopStopResponse(toolName) {
   return {
     id: `msg_loop_${Date.now()}`,
@@ -251,12 +323,29 @@ function flattenTextBlocks(value) {
 }
 
 // Anthropic payload содержит расширения которых OpenAI-compat API
-// не понимает (cache_control, content-arrays, reasoning, thinking).
-// Polza 400-ит на таких. Очищаем перед форвардом.
+// не понимает (cache_control, content-arrays, reasoning, thinking,
+// output_config). Polza 400-ит или галлюцинирует на таких. Очищаем.
 function cleanForOpenAICompat(parsed) {
   delete parsed.reasoning;
   delete parsed.thinking;
   delete parsed.metadata;
+
+  // output_config — Anthropic-style structured output (JSON schema). Polza
+  // ожидает OpenAI-формат `response_format: {type: 'json_schema', json_schema: ...}`.
+  // Конвертируем если есть, иначе модель получает инструкции «Return JSON
+  // with title field» без контекста структуры и отвечает свободным текстом —
+  // у ученика это выглядит как «модель пишет преамбулу без tool_use».
+  if (parsed.output_config?.format?.type === 'json_schema' && parsed.output_config.format.schema) {
+    parsed.response_format = {
+      type: 'json_schema',
+      json_schema: {
+        name: 'output',
+        strict: true,
+        schema: parsed.output_config.format.schema,
+      },
+    };
+  }
+  delete parsed.output_config;
 
   if (parsed.system !== undefined) {
     parsed.system = flattenTextBlocks(parsed.system);
@@ -365,11 +454,39 @@ export async function startMetricsProxy(upstreamBaseUrl) {
         return;
       }
 
-      // Loop-guard: до выбора провайдера парсим тело и смотрим не повторяет
-      // ли модель один и тот же tool_use 3+ раз подряд. Если да — обрываем
-      // цикл, не идём в апстрим. Spares the user from 1h+ burn loops.
+      // Title-generation stub: Claude Code шлёт служебный запрос «придумай
+      // title» перед основной задачей. Polza отвечает на него мусором (часто
+      // — самим калькулятором), Claude Code показывает это как первое
+      // assistant-сообщение. Отдаём валидный фейк, не идём в апстрим.
       try {
         const parsed = JSON.parse(originalBody.toString('utf8'));
+        if (isTitleGenerationRequest(parsed)) {
+          dlog('[metrics] TITLE STUB: перехвачен title-generation запрос');
+          if (parsed.stream) {
+            res.writeHead(200, {
+              'Content-Type': 'text/event-stream',
+              'Cache-Control': 'no-cache',
+              'Connection': 'keep-alive',
+            });
+            res.end(buildFakeTitleStream());
+          } else {
+            // Non-stream fallback
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({
+              id: `msg_title_stub_${Date.now()}`,
+              type: 'message', role: 'assistant',
+              model: 'krasavacode-title-stub',
+              content: [{ type: 'text', text: JSON.stringify({ title: 'Coding session' }) }],
+              stop_reason: 'end_turn', stop_sequence: null,
+              usage: { input_tokens: 0, output_tokens: 5 },
+            }));
+          }
+          return;
+        }
+
+        // Loop-guard: до выбора провайдера парсим тело и смотрим не повторяет
+        // ли модель один и тот же tool_use 3+ раз подряд. Если да — обрываем
+        // цикл, не идём в апстрим. Spares the user from 1h+ burn loops.
         const loopTool = detectLoop(parsed);
         if (loopTool) {
           dlog(`[metrics] LOOP GUARD: ${loopTool} повторился ${LOOP_THRESHOLD}+ раз — обрываю`);

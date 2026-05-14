@@ -15,7 +15,7 @@ import { startSessionLog, listLogs, tailLog, printLogHint } from '../src/session
 import { reportToTelegram, pingTelegram } from '../src/telegram-reporter.js';
 
 // Hardcoded so it works inside Bun --compile (no FS access to package.json)
-const VERSION = '0.5.50';
+const VERSION = '0.5.51';
 
 const cmd = process.argv[2];
 
