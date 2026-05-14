@@ -27,30 +27,25 @@ const USAGE_FILE = join(ROOT, 'usage.json');
 const LAST_REQUEST_FILE = join(ROOT, 'last-request.json');
 
 /**
- * Сохраняем тело первого «настоящего» запроса сессии — того где у Claude
- * Code есть tools (то есть это пользовательская задача, а не служебная
- * title-генерация). Title-запрос идёт первым с tools:[] и output_config —
- * мы его пропускаем, ждём следующий.
+ * Сохраняем тело КАЖДОГО запроса с реальными tools (т.е. пользовательской
+ * задачи, не служебной title-генерации). Перезаписываем — пусть Алекс
+ * всегда видит последний живой ground-truth payload, не первый.
  *
- * Это ground-truth payload Claude Code v2.1.140 для root-cause анализа
- * случаев когда модель не вызывает tool_use.
+ * Используется для диагностики случаев когда модель ведёт себя странно
+ * (циклы LS, не вызывает Write, висит). После проблемной сессии ученик
+ * присылает этот файл.
  */
-let _firstReqDumped = false;
-async function dumpFirstRequest(bodyBuf) {
-  if (_firstReqDumped) return;
+async function dumpLatestRequest(bodyBuf) {
   try {
     const parsed = JSON.parse(bodyBuf.toString('utf8'));
-    // Пропускаем служебные запросы (title generation, summary etc):
-    // у них нет tools или есть output_config со schema.
     const hasTools = Array.isArray(parsed.tools) && parsed.tools.length > 0;
     const hasOutputConfig = parsed.output_config != null;
-    const hasAssistant = (parsed.messages || []).some(m => m.role === 'assistant');
-    if (!hasTools || hasOutputConfig || hasAssistant) return;
-    _firstReqDumped = true;
+    if (!hasTools || hasOutputConfig) return;
     await mkdir(ROOT, { recursive: true });
     await writeFile(LAST_REQUEST_FILE, JSON.stringify({
       capturedAt: new Date().toISOString(),
-      note: 'Первый user-task запрос с tools (служебные title/summary пропущены). Пришли наставнику если модель не создаёт файлы.',
+      note: 'Последний запрос с tools от Claude Code. Перезаписывается на каждый. Пришли наставнику если модель ведёт себя странно.',
+      messagesCount: (parsed.messages || []).length,
       body: parsed,
     }, null, 2));
   } catch {} // не валим запрос если dump не получился
@@ -169,40 +164,60 @@ const FRIENDLY_429 = () => ({
 });
 
 /**
- * Loop-guard: некоторые модели (GLM 4.7 Flash, DeepSeek V4 Flash) в agentic
- * loop'е могут зависнуть, повторяя один и тот же tool_use 10+ раз подряд.
- * Сжигают токены, висят 30+ минут, ученик не понимает что делать.
+ * Loop-guard: модели зацикливаются на исследовании структуры папки —
+ * LS → LS → LS с разными аргументами всё глубже, никогда не пишут Write.
+ * Подсчёт идентичных сигнатур (старая версия) не ловит — каждый LS уникален
+ * по path. Новая стратегия:
  *
- * Если в текущем запросе ПОСЛЕДНИЕ N assistant turn'ов имеют одинаковый
- * tool_use (name + input) — обрываем цикл, возвращая fake Claude-style
- * ответ с stop_reason='end_turn' и инструкцией ученику.
+ *   1. ИДЕНТИЧНЫЕ повторы: 3+ одинаковых tool_use (name+input) подряд → стоп.
+ *   2. Тот же НАЗВАНИЕ: один и тот же tool name 4+ раз в последних 6 turn'ах
+ *      (даже с разными аргументами — это «исследовательский цикл»).
+ *
+ * Защищает от LS-каскадов, повторных Bash «pwd/ls», бесконечных Read.
  */
-const LOOP_THRESHOLD = 3; // три повтора подряд → стоп
+const LOOP_IDENTICAL_THRESHOLD = 3;     // 3 одинаковых tool_use подряд
+const LOOP_SAMENAME_THRESHOLD = 4;      // 4+ вызовов одного name
+const LOOP_SAMENAME_WINDOW = 6;         // в окне последних N turn'ов
 
 function detectLoop(parsedBody) {
   const messages = parsedBody?.messages;
   if (!Array.isArray(messages)) return null;
-  const sigs = [];
+  // Собираем по каждому assistant turn'у список tool_use blocks
+  const turns = [];
   for (const m of messages) {
     if (m.role !== 'assistant') continue;
     const blocks = Array.isArray(m.content) ? m.content : [];
     const toolUses = blocks.filter(b => b?.type === 'tool_use');
     if (toolUses.length === 0) continue;
-    // Сигнатура turn'а — упорядоченный список (name, hash(input))
     const sig = toolUses.map(tu => {
       let inputStr = '';
       try { inputStr = JSON.stringify(tu.input || {}); } catch {}
       return `${tu.name}:${inputStr.slice(0, 500)}`;
     }).join('|');
-    sigs.push(sig);
+    const names = toolUses.map(tu => tu.name);
+    turns.push({ sig, names });
   }
-  if (sigs.length < LOOP_THRESHOLD) return null;
-  const lastN = sigs.slice(-LOOP_THRESHOLD);
-  if (lastN.every(s => s === lastN[0])) {
-    // Достаём первое имя tool'а для понятного сообщения
-    const firstTool = lastN[0].split(':')[0] || 'инструмент';
-    return firstTool;
+
+  // (1) идентичные подряд
+  if (turns.length >= LOOP_IDENTICAL_THRESHOLD) {
+    const lastN = turns.slice(-LOOP_IDENTICAL_THRESHOLD);
+    if (lastN.every(t => t.sig === lastN[0].sig)) {
+      return lastN[0].sig.split(':')[0] || 'инструмент';
+    }
   }
+
+  // (2) тот же name в окне — детектим LS-каскады
+  if (turns.length >= LOOP_SAMENAME_THRESHOLD) {
+    const window = turns.slice(-LOOP_SAMENAME_WINDOW);
+    const counter = new Map();
+    for (const t of window) {
+      for (const n of t.names) counter.set(n, (counter.get(n) || 0) + 1);
+    }
+    for (const [name, count] of counter) {
+      if (count >= LOOP_SAMENAME_THRESHOLD) return name;
+    }
+  }
+
   return null;
 }
 
@@ -496,9 +511,9 @@ export async function startMetricsProxy(upstreamBaseUrl) {
         }
       } catch {} // если тело не парсится — идём дальше, апстрим разберётся
 
-      // Diagnostic: дамп ground-truth payload первого запроса сессии — нужен
-      // когда модель не вызывает tool_use и непонятно почему.
-      dumpFirstRequest(originalBody).catch(() => {});
+      // Diagnostic: дамп ground-truth payload каждого запроса с tools —
+      // нужен для разбора когда модель ведёт себя странно.
+      dumpLatestRequest(originalBody).catch(() => {});
 
       // /v1/messages: provider+model selection with retry-on-failure.
       // tried: Map<providerId, Set<modelName>> — модели уже попробованные в
