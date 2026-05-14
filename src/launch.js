@@ -4,7 +4,7 @@ import { homedir, platform } from 'node:os';
 import { join, sep as pathSep, relative } from 'node:path';
 import { configuredProviders, PROVIDERS } from './providers.js';
 import { getCooldowns } from './cooldowns.js';
-import { STUDENT_SYSTEM_PROMPT } from './system-prompt.js';
+import { buildStudentSystemPrompt } from './system-prompt.js';
 
 const PLACEHOLDER_TOKEN = 'sk-krasavacode-local';
 const CLAUDE_CONFIG_DIR = join(homedir(), '.krasavacode', 'claude-config');
@@ -82,22 +82,32 @@ export async function launchClaude(paths, hub, opts = {}) {
   // Organization · API Usage Billing" header on the welcome screen.
   await seedClaudeSettings();
 
-  // Sandbox: claude works inside ~/krasavacode-projects/ by default. Но если
-  // пользователь сам зашёл в подпапку (cd ~/krasavacode-projects/myproj && krasavacode)
-  // — уважаем его выбор и работаем в этой подпапке. Это позволяет держать
-  // каждый проект в отдельной папке вместо общей свалки.
+  // Sandbox: claude работает в текущей папке (process.cwd()) если она
+  // безопасная. «Безопасная» = подпапка ~/krasavacode-projects/ ИЛИ любая
+  // папка вне HOME-сенсетивных мест.
+  //
+  // ОСОБО ОПАСНЫЕ места (форсируем sandbox в ~/krasavacode-projects/):
+  //   - $HOME напрямую (содержит Documents, .ssh, ключи и т.п.)
+  //   - / и системные корни
+  //
+  // Всё остальное (подпапки HOME типа ~/mygame, рабочие папки на сервере,
+  // /opt/что-то) — уважаем. Ученик сам решил где работать.
   const useSandbox = process.env.KRASAVACODE_NO_SANDBOX !== '1';
   const projectsDir = await ensureProjectsDir();
   const userCwd = process.cwd();
+  const home = homedir();
+  const isHome = userCwd === home;
+  const isRoot = userCwd === '/' || /^[a-zA-Z]:\\?$/.test(userCwd); // / или C:\
   let cwd;
   if (!useSandbox) {
     cwd = userCwd;
-  } else if (userCwd === projectsDir || userCwd.startsWith(projectsDir + pathSep)) {
-    // Внутри projects dir — уважаем (подпапка проекта)
-    cwd = userCwd;
-  } else {
-    // Где-то ещё (HOME, system path, чужой каталог) — форсим sandbox
+  } else if (isHome || isRoot) {
+    // Опасно — в HOME/root полно секретов. Форсим projectsDir.
     cwd = projectsDir;
+  } else {
+    // Любая другая папка (включая ~/mygame, ~/krasavacode-projects/x,
+    // /opt/work, рабочую папку на сервере) — уважаем выбор пользователя.
+    cwd = userCwd;
   }
 
   // Drop any pre-existing Anthropic creds from the shell/Keychain so the
@@ -149,7 +159,7 @@ export async function launchClaude(paths, hub, opts = {}) {
     a === '--system-prompt' || a === '--append-system-prompt' || a === '--system-prompt-file'
   );
   if (!hasOwnSystemPrompt && process.env.KRASAVACODE_NO_TEACHER !== '1') {
-    passthroughArgs.push('--append-system-prompt', STUDENT_SYSTEM_PROMPT);
+    passthroughArgs.push('--append-system-prompt', buildStudentSystemPrompt(cwd));
   }
   // First-project onboarding: pass the picked prompt as the positional
   // argument to claude. Claude Code starts an interactive session AND

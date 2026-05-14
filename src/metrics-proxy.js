@@ -394,8 +394,32 @@ function rewriteBodyWithProvider(originalBody, providerId, modelName) {
 
 // Хард-таймаут на response-headers: если апстрим не начал отвечать за
 // 5 минут — рвём соединение, чтобы ученик не сидел над «Accomplishing… 8m»
-// бесконечно. Сам стрим после headers — без таймаута (длинные ответы ок).
+// бесконечно. Сам стрим после headers — со stream-idle timeout (см. ниже).
 const UPSTREAM_RESPONSE_HEADERS_TIMEOUT_MS = 5 * 60 * 1000;
+
+// Stream-idle timeout: если стрим начался но не шлёт events 90 секунд —
+// рвём. Защищает от случаев когда Polza/ccr начали стримить, а потом
+// зависли посреди (ученик видит «Sautéed 8m» без прогресса).
+const STREAM_IDLE_TIMEOUT_MS = 90 * 1000;
+
+function pipeWithIdleTimeout(src, dst) {
+  let timer = null;
+  const reset = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      dlog(`[metrics] stream idle ${STREAM_IDLE_TIMEOUT_MS / 1000}s — rвём`);
+      src.destroy(new Error('stream idle timeout'));
+      try { dst.end(); } catch {}
+    }, STREAM_IDLE_TIMEOUT_MS);
+  };
+  reset();
+  src.on('data', () => { reset(); });
+  const stop = () => { if (timer) clearTimeout(timer); };
+  src.on('end', stop);
+  src.on('close', stop);
+  src.on('error', stop);
+  src.pipe(dst);
+}
 
 function forward(upstream, method, path, headers, bodyBuffer) {
   return new Promise((resolve, reject) => {
@@ -461,7 +485,7 @@ export async function startMetricsProxy(upstreamBaseUrl) {
         try {
           const upRes = await forward(upstream, req.method, req.url, req.headers, originalBody);
           res.writeHead(upRes.statusCode, upRes.headers);
-          upRes.pipe(res);
+          pipeWithIdleTimeout(upRes, res);
         } catch (e) {
           res.writeHead(502, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: { type: 'upstream_error', message: e.message } }));
@@ -579,7 +603,7 @@ export async function startMetricsProxy(upstreamBaseUrl) {
             bump(choice.id).catch(() => {});
           }
           res.writeHead(upRes.statusCode, upRes.headers);
-          upRes.pipe(res);
+          pipeWithIdleTimeout(upRes, res);
           return;
         }
 
