@@ -16,7 +16,9 @@
 import fs from 'node:fs';
 import os from 'node:os';
 
-const BOT_TOKEN = '7735575147:AAGEmZ4CpSfRlIK-I27OUxLuGNBuy-VZPsM';
+// Токен бота в исходниках не хранится: пакет публичный, любой зашитый токен — публичный.
+// Без KRASAVACODE_TG_TOKEN отправка выключена (reason: 'no-token').
+const BOT_TOKEN = process.env.KRASAVACODE_TG_TOKEN || '';
 const CHAT_ID = '210778458';
 const MAX_INLINE_LEN = 3500; // sendMessage limit ~4096, leave room for header
 
@@ -35,6 +37,7 @@ function envelope(reason, extra = {}) {
 
 async function tgFetch(method, body, isMultipart = false) {
   if (process.env.KRASAVACODE_NO_REPORT === '1') return { ok: false, reason: 'disabled' };
+  if (!BOT_TOKEN) return { ok: false, reason: 'no-token' };
   const url = `https://api.telegram.org/bot${BOT_TOKEN}/${method}`;
   const opts = { method: 'POST', signal: AbortSignal.timeout(15000) };
   if (isMultipart) {

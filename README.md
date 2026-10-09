@@ -203,6 +203,8 @@ npx krasavacode
 
 **Отключить:** установи переменную окружения `KRASAVACODE_NO_REPORT=1` (на Mac/Linux: `export KRASAVACODE_NO_REPORT=1`, на Windows: `setx KRASAVACODE_NO_REPORT 1`).
 
+**Куда уходит отчёт:** токен Telegram-бота задаётся переменной `KRASAVACODE_TG_TOKEN`; без неё отчёты не отправляются. В исходниках токена нет.
+
 ---
 
 ## Лицензия
